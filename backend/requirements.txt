@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+python-jose[cryptography]
+python-multipart
+python-dotenv
+psycopg2-binary
+# Phase III: AI-Powered Chatbot dependencies
+openai>=1.0.0
+openai-agents>=0.1.0

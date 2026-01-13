@@ -1,7 +1,11 @@
 """In-memory repository for todo storage."""
 
+from datetime import date, datetime
 from typing import Optional
 from src.models.todo import Todo
+from src.validation.priority import validate_priority
+from src.validation.dates import validate_date, validate_datetime
+from src.validation.recurrence import validate_recurrence
 
 
 class TodoRepository:
@@ -23,16 +27,67 @@ class TodoRepository:
             cls._instance._next_id = 1
         return cls._instance
 
-    def add(self, description: str) -> Todo:
+    def add(
+        self,
+        description: str,
+        priority: str = "medium",
+        tags: Optional[list[str]] = None,
+        due_date: Optional[date] = None,
+        reminder_time: Optional[datetime] = None,
+        recurrence: str = "none",
+    ) -> Todo | str:
         """Create and store a new todo with auto-assigned ID.
 
         Args:
             description: Task description
+            priority: Priority level ("high", "medium", or "low")
+            tags: List of tags for categorization
+            due_date: Optional due date
+            reminder_time: Optional reminder datetime
+            recurrence: Recurrence pattern ("none", "daily", "weekly", or "monthly")
 
         Returns:
-            Created Todo object
+            Created Todo object if successful, error message string if validation fails
         """
-        todo = Todo(id=self._next_id, description=description, completed=False)
+        # Validate priority
+        priority_error = validate_priority(priority)
+        if priority_error:
+            return priority_error
+
+        # Validate recurrence
+        recurrence_error = validate_recurrence(recurrence)
+        if recurrence_error:
+            return recurrence_error
+
+        # Create todo with validated fields
+        todo = Todo(
+            id=self._next_id,
+            description=description,
+            completed=False,
+            priority=priority,
+            tags=tags if tags is not None else [],
+            due_date=due_date,
+            reminder_time=reminder_time,
+            recurrence=recurrence,
+        )
+        self._todos[self._next_id] = todo
+        self._next_id += 1
+        return todo
+
+    def add_existing(self, todo: Todo) -> Todo:
+        """Add a pre-constructed todo to storage.
+
+        This method is used for recurring tasks where the next occurrence
+        is created with specific dates and a new ID needs to be assigned.
+
+        Args:
+            todo: Pre-constructed Todo object (id will be reassigned)
+
+        Returns:
+            The stored Todo object with newly assigned ID
+        """
+        # Assign new ID to the pre-constructed todo
+        todo.id = self._next_id
         self._todos[self._next_id] = todo
         self._next_id += 1
         return todo
@@ -56,19 +111,39 @@ class TodoRepository:
         """
         return sorted(self._todos.values(), key=lambda t: t.id)
 
-    def update(self, id: int, description: str) -> Optional[Todo]:
-        """Update a todo's description.
+    def update(self, id: int, **kwargs) -> Optional[Todo] | str:
+        """Update a todo's fields.
 
         Args:
             id: Todo ID to update
-            description: New description
+            **kwargs: Fields to update (description, priority, tags, due_date,
+                     reminder_time, recurrence, completed)
 
         Returns:
-            Updated Todo object if found, None otherwise
+            Updated Todo object if successful, None if not found,
+            error message string if validation fails
         """
         todo = self._todos.get(id)
-        if todo:
-            todo.description = description
+        if not todo:
+            return None
+
+        # Validate priority if provided
+        if "priority" in kwargs:
+            priority_error = validate_priority(kwargs["priority"])
+            if priority_error:
+                return priority_error
+
+        # Validate recurrence if provided
+        if "recurrence" in kwargs:
+            recurrence_error = validate_recurrence(kwargs["recurrence"])
+            if recurrence_error:
+                return recurrence_error
+
+        # Update all provided fields
+        for field, value in kwargs.items():
+            if hasattr(todo, field):
+                setattr(todo, field, value)
+
         return todo
 
     def delete(self, id: int) -> bool:
