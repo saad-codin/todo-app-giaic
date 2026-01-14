@@ -17,6 +17,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.54.0",
+    "@openai/chatkit-react": "^1.4.1",
     "react-markdown": "^9.0.0",
     "zod": "^3.24.1"
   },

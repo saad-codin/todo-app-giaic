@@ -1,39 +1,64 @@
 'use client';
 
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChatInterface } from '@/components/chat/ChatInterface';
-import { api, ConversationSummary } from '@/lib/api';
+import Script from 'next/script';
+import { ChatKit, useChatKit } from '@openai/chatkit-react';
 import { useAuthContext } from '@/lib/auth';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function ChatPage() {
   const { user, isLoading: isAuthLoading } = useAuthContext();
   const router = useRouter();
-  const [selectedConversationId, setSelectedConversationId] = useState<string>();
 
-  // Redirect to signin if not authenticated
-  if (!isAuthLoading && !user) {
-    router.push('/signin');
-    return null;
-  }
-
-  // Fetch conversations list
-  const { data: conversationsData } = useQuery({
-    queryKey: ['conversations'],
-    queryFn: () => api.getConversations(10),
-    enabled: !!user,
+  // ChatKit hook - connects to our custom backend with MCP tools
+  const { control } = useChatKit({
+    api: {
+      // Point to our custom ChatKit server
+      url: `${API_BASE}/api/chatkit`,
+      // Custom fetch to include auth credentials
+      fetch: async (input, init) => {
+        return fetch(input, {
+          ...init,
+          credentials: 'include',
+        });
+      },
+    },
+    // Start screen with todo-specific prompts
+    startScreen: {
+      greeting: 'Hi! I\'m your AI Todo Assistant. How can I help you manage your tasks today?',
+      prompts: [
+        {
+          label: 'Add a task',
+          prompt: 'Add a new task: Buy groceries tomorrow',
+        },
+        {
+          label: 'Show my tasks',
+          prompt: 'Show me all my pending tasks',
+        },
+        {
+          label: 'Complete a task',
+          prompt: 'Mark my first task as complete',
+        },
+        {
+          label: 'Search tasks',
+          prompt: 'Search for tasks related to work',
+        },
+      ],
+    },
+    theme: 'light',
+    onError: ({ error }) => {
+      console.error('ChatKit error:', error);
+    },
   });
 
-  const conversations = conversationsData?.conversations || [];
-
-  const handleConversationChange = (id: string) => {
-    setSelectedConversationId(id || undefined);
-  };
-
-  const handleSelectConversation = (conv: ConversationSummary) => {
-    setSelectedConversationId(conv.id);
-  };
+  // Redirect to signin if not authenticated
+  useEffect(() => {
+    if (!isAuthLoading && !user) {
+      router.push('/signin');
+    }
+  }, [isAuthLoading, user, router]);
 
   if (isAuthLoading) {
     return (
@@ -43,8 +68,18 @@ export default function ChatPage() {
     );
   }
 
+  if (!user) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* ChatKit Script - required for the component to work */}
+      <Script
+        src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js"
+        strategy="beforeInteractive"
+      />
+
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -77,55 +112,13 @@ export default function ChatPage() {
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex gap-6 h-[calc(100vh-8rem)]">
-          {/* Sidebar - Conversation History */}
-          <aside className="w-64 flex-shrink-0 hidden md:block">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200">
-                <h3 className="font-medium text-gray-900">Conversations</h3>
-              </div>
-              <div className="overflow-y-auto h-[calc(100%-3rem)]">
-                {conversations.length === 0 ? (
-                  <p className="px-4 py-3 text-sm text-gray-500">
-                    No conversations yet
-                  </p>
-                ) : (
-                  <ul className="divide-y divide-gray-100">
-                    {conversations.map((conv) => (
-                      <li key={conv.id}>
-                        <button
-                          onClick={() => handleSelectConversation(conv)}
-                          className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
-                            selectedConversationId === conv.id
-                              ? 'bg-blue-50 border-l-2 border-blue-600'
-                              : ''
-                          }`}
-                        >
-                          <p className="text-sm font-medium text-gray-900 truncate">
-                            {conv.title || 'New conversation'}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {new Date(conv.updated_at).toLocaleDateString()} ·{' '}
-                            {conv.message_count} messages
-                          </p>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </aside>
-
-          {/* Chat Interface */}
-          <div className="flex-1">
-            <ChatInterface
-              conversationId={selectedConversationId}
-              onConversationChange={handleConversationChange}
-            />
-          </div>
+      {/* Main content - ChatKit */}
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          <ChatKit
+            control={control}
+            className="h-[calc(100vh-10rem)] w-full"
+          />
         </div>
       </main>
     </div>

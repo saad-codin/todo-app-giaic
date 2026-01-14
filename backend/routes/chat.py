@@ -1,307 +1,207 @@
-"""Chat API endpoints for AI-powered todo chatbot."""
+"""ChatKit server implementation for AI-powered todo chatbot with MCP tools."""
 
-import uuid
-import time
-from datetime import datetime
-from typing import Optional
 from collections import defaultdict
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
-from sqlmodel import Session, select, func
+from collections.abc import AsyncIterator
+from datetime import datetime
 
-from db import get_session
-from auth import get_current_user
-from models import (
-    User,
-    Conversation,
-    ChatMessage,
-    MessageRole,
-    ChatRequest,
-    ChatResponse,
-    ConversationSummary,
-    ConversationListResponse,
-    ChatMessageResponse,
-    ConversationDetailResponse,
+from fastapi import APIRouter, Request
+from fastapi.responses import Response, StreamingResponse
+
+from agents import Runner
+from chatkit.server import ChatKitServer, StreamingResult
+from chatkit.store import Store, NotFoundError
+from chatkit.types import (
+    Attachment,
+    Page,
+    ThreadItem,
+    ThreadMetadata,
+    UserMessageItem,
+    ThreadStreamEvent,
+    AssistantMessageItem,
+    AssistantMessageContent,
+    ThreadItemDoneEvent,
 )
-from agent.runner import run_agent
+from chatkit.agents import AgentContext, simple_to_agent_input, stream_agent_response
 
-router = APIRouter(prefix="/api/chat", tags=["Chat"])
+from db import engine
+from sqlmodel import Session
+from agent.runner import todo_assistant, set_context, TodoContext
 
-# Simple in-memory rate limiting (per user)
-# In production, use Redis or similar
-RATE_LIMIT_REQUESTS = 10  # max requests
-RATE_LIMIT_WINDOW = 60  # per 60 seconds
-_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+router = APIRouter(prefix="/api", tags=["ChatKit"])
 
 
-def check_rate_limit(user_id: str) -> tuple[bool, int]:
-    """Check if user is rate limited. Returns (is_limited, retry_after_seconds)."""
-    now = time.time()
-    window_start = now - RATE_LIMIT_WINDOW
-
-    # Clean old entries
-    _rate_limit_store[user_id] = [
-        ts for ts in _rate_limit_store[user_id] if ts > window_start
-    ]
-
-    # Check limit
-    if len(_rate_limit_store[user_id]) >= RATE_LIMIT_REQUESTS:
-        oldest = min(_rate_limit_store[user_id])
-        retry_after = int(oldest + RATE_LIMIT_WINDOW - now) + 1
-        return True, retry_after
-
-    # Record this request
-    _rate_limit_store[user_id].append(now)
-    return False, 0
+class RequestContext:
+    """Context passed through ChatKit operations."""
+    def __init__(self, user_id: str, db_session: Session = None):
+        self.user_id = user_id
+        self.db_session = db_session
 
 
-def get_or_create_conversation(
-    session: Session,
-    user_id: str,
-    conversation_id: Optional[str] = None,
-) -> Conversation:
-    """Get existing conversation or create a new one."""
-    if conversation_id:
-        conversation = session.exec(
-            select(Conversation).where(
-                Conversation.id == conversation_id,
-                Conversation.user_id == user_id,
-            )
-        ).first()
-        if conversation:
-            return conversation
+class InMemoryChatKitStore(Store[RequestContext]):
+    """In-memory store for ChatKit threads and items."""
 
-    # Create new conversation
-    conversation = Conversation(
-        id=str(uuid.uuid4()),
-        user_id=user_id,
-    )
-    session.add(conversation)
-    session.commit()
-    session.refresh(conversation)
-    return conversation
+    def __init__(self):
+        self.threads: dict[str, ThreadMetadata] = {}
+        self.items: dict[str, list[ThreadItem]] = defaultdict(list)
+        self.attachments: dict[str, Attachment] = {}
 
+    async def load_thread(self, thread_id: str, context: RequestContext) -> ThreadMetadata:
+        if thread_id not in self.threads:
+            raise NotFoundError(f"Thread {thread_id} not found")
+        return self.threads[thread_id]
 
-def load_conversation_history(
-    session: Session,
-    conversation_id: str,
-    limit: int = 10,
-) -> list[dict]:
-    """Load recent messages from a conversation."""
-    messages = session.exec(
-        select(ChatMessage)
-        .where(ChatMessage.conversation_id == conversation_id)
-        .order_by(ChatMessage.created_at.desc())
-        .limit(limit)
-    ).all()
+    async def save_thread(self, thread: ThreadMetadata, context: RequestContext) -> None:
+        self.threads[thread.id] = thread
 
-    # Reverse to get chronological order
-    messages = list(reversed(messages))
+    async def load_threads(
+        self, limit: int, after: str | None, order: str, context: RequestContext
+    ) -> Page[ThreadMetadata]:
+        threads = list(self.threads.values())
+        return self._paginate(threads, after, limit, order, lambda t: t.created_at, lambda t: t.id)
 
-    return [
-        {
-            "role": msg.role.value,
-            "content": msg.content,
-            "tool_calls": msg.tool_calls,
-        }
-        for msg in messages
-    ]
+    async def load_thread_items(
+        self, thread_id: str, after: str | None, limit: int, order: str, context: RequestContext
+    ) -> Page[ThreadItem]:
+        items = self.items.get(thread_id, [])
+        return self._paginate(items, after, limit, order, lambda i: i.created_at, lambda i: i.id)
 
+    async def add_thread_item(self, thread_id: str, item: ThreadItem, context: RequestContext) -> None:
+        self.items[thread_id].append(item)
 
-def save_message(
-    session: Session,
-    conversation_id: str,
-    role: MessageRole,
-    content: str,
-    tool_calls: Optional[dict] = None,
-) -> ChatMessage:
-    """Save a message to the conversation."""
-    message = ChatMessage(
-        id=str(uuid.uuid4()),
-        conversation_id=conversation_id,
-        role=role,
-        content=content,
-        tool_calls=tool_calls,
-    )
-    session.add(message)
-    session.commit()
-    return message
+    async def save_item(self, thread_id: str, item: ThreadItem, context: RequestContext) -> None:
+        items = self.items[thread_id]
+        for idx, existing in enumerate(items):
+            if existing.id == item.id:
+                items[idx] = item
+                return
+        items.append(item)
 
+    async def load_item(self, thread_id: str, item_id: str, context: RequestContext) -> ThreadItem:
+        for item in self.items.get(thread_id, []):
+            if item.id == item_id:
+                return item
+        raise NotFoundError(f"Item {item_id} not found")
 
-@router.post("", response_model=ChatResponse)
-async def send_chat_message(
-    request: ChatRequest,
-    response: Response,
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    """Send a chat message and get AI response.
+    async def delete_thread(self, thread_id: str, context: RequestContext) -> None:
+        self.threads.pop(thread_id, None)
+        self.items.pop(thread_id, None)
 
-    The AI assistant will interpret the natural language message
-    and perform task operations via MCP tools.
-    """
-    # Check rate limit
-    is_limited, retry_after = check_rate_limit(current_user.id)
-    if is_limited:
-        response.headers["Retry-After"] = str(retry_after)
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "code": "RATE_LIMIT",
-                "message": "Too many requests. Please wait a moment.",
-            },
-        )
+    async def delete_thread_item(self, thread_id: str, item_id: str, context: RequestContext) -> None:
+        self.items[thread_id] = [i for i in self.items.get(thread_id, []) if i.id != item_id]
 
-    # Validate message
-    if not request.message or not request.message.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "VALIDATION_ERROR", "message": "Message cannot be empty"},
-        )
+    async def save_attachment(self, attachment: Attachment, context: RequestContext) -> None:
+        self.attachments[attachment.id] = attachment
 
-    # Get or create conversation
-    conversation = get_or_create_conversation(
-        session,
-        current_user.id,
-        request.conversation_id,
-    )
+    async def load_attachment(self, attachment_id: str, context: RequestContext) -> Attachment:
+        if attachment_id not in self.attachments:
+            raise NotFoundError(f"Attachment {attachment_id} not found")
+        return self.attachments[attachment_id]
 
-    # Load conversation history for context
-    history = load_conversation_history(session, conversation.id)
+    async def delete_attachment(self, attachment_id: str, context: RequestContext) -> None:
+        self.attachments.pop(attachment_id, None)
 
-    # Save user message
-    save_message(session, conversation.id, MessageRole.user, request.message)
-
-    try:
-        # Run the AI agent
-        response_text, tool_results = run_agent(
-            session=session,
-            user_id=current_user.id,
-            message=request.message,
-            conversation_history=history,
-        )
-
-        # Save assistant response
-        save_message(
-            session,
-            conversation.id,
-            MessageRole.assistant,
-            response_text,
-            tool_calls={"results": tool_results} if tool_results else None,
-        )
-
-        # Update conversation timestamp
-        conversation.updated_at = datetime.utcnow()
-        session.add(conversation)
-        session.commit()
-
-        return ChatResponse(
-            response=response_text,
-            conversation_id=conversation.id,
-            tool_results=tool_results if tool_results else None,
-        )
-
-    except Exception as e:
-        # Log error but return user-friendly message
-        print(f"Chat error: {e}")
-        error_response = "I'm having trouble processing your request right now. Please try again in a moment."
-
-        # Save error response
-        save_message(
-            session,
-            conversation.id,
-            MessageRole.assistant,
-            error_response,
-        )
-
-        return ChatResponse(
-            response=error_response,
-            conversation_id=conversation.id,
-            tool_results=None,
-        )
+    def _paginate(self, rows, after, limit, order, sort_key, cursor_key):
+        sorted_rows = sorted(rows, key=sort_key, reverse=order == "desc")
+        start = 0
+        if after:
+            for idx, row in enumerate(sorted_rows):
+                if cursor_key(row) == after:
+                    start = idx + 1
+                    break
+        data = sorted_rows[start:start + limit]
+        has_more = start + limit < len(sorted_rows)
+        next_after = cursor_key(data[-1]) if has_more and data else None
+        return Page(data=data, has_more=has_more, after=next_after)
 
 
-@router.get("/conversations", response_model=ConversationListResponse)
-async def list_conversations(
-    limit: int = Query(default=10, ge=1, le=50),
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    """List user's conversations ordered by most recent."""
-    conversations = session.exec(
-        select(Conversation)
-        .where(Conversation.user_id == current_user.id)
-        .order_by(Conversation.updated_at.desc())
-        .limit(limit)
-    ).all()
+# Global store instance
+store = InMemoryChatKitStore()
 
-    # Get message counts for each conversation
-    summaries = []
-    for conv in conversations:
-        count = session.exec(
-            select(func.count(ChatMessage.id))
-            .where(ChatMessage.conversation_id == conv.id)
-        ).first() or 0
 
-        summaries.append(ConversationSummary(
-            id=conv.id,
-            title=conv.title,
-            created_at=conv.created_at.isoformat() + "Z",
-            updated_at=conv.updated_at.isoformat() + "Z",
-            message_count=count,
+class TodoChatKitServer(ChatKitServer[RequestContext]):
+    """ChatKit server with MCP tools for todo management."""
+
+    async def respond(
+        self,
+        thread: ThreadMetadata,
+        input_user_message: UserMessageItem | None,
+        context: RequestContext,
+    ) -> AsyncIterator[ThreadStreamEvent]:
+        """Generate response using the todo agent with MCP tools."""
+
+        # Set up context for MCP tool operations
+        set_context(TodoContext(
+            user_id=context.user_id,
+            session=context.db_session,
         ))
 
-    total = session.exec(
-        select(func.count(Conversation.id))
-        .where(Conversation.user_id == current_user.id)
-    ).first() or 0
-
-    return ConversationListResponse(
-        conversations=summaries,
-        total=total,
-    )
-
-
-@router.get("/conversations/{conversation_id}", response_model=ConversationDetailResponse)
-async def get_conversation(
-    conversation_id: str,
-    limit: int = Query(default=50, ge=1, le=100),
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    """Get a conversation with its messages."""
-    conversation = session.exec(
-        select(Conversation).where(
-            Conversation.id == conversation_id,
-            Conversation.user_id == current_user.id,
-        )
-    ).first()
-
-    if not conversation:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "Conversation not found"},
-        )
-
-    messages = session.exec(
-        select(ChatMessage)
-        .where(ChatMessage.conversation_id == conversation_id)
-        .order_by(ChatMessage.created_at.asc())
-        .limit(limit)
-    ).all()
-
-    return ConversationDetailResponse(
-        id=conversation.id,
-        title=conversation.title,
-        messages=[
-            ChatMessageResponse(
-                id=msg.id,
-                role=msg.role,
-                content=msg.content,
-                tool_calls=msg.tool_calls,
-                created_at=msg.created_at.isoformat() + "Z",
+        try:
+            # Load conversation history
+            items_page = await self.store.load_thread_items(
+                thread.id, after=None, limit=20, order="asc", context=context
             )
-            for msg in messages
-        ],
-        created_at=conversation.created_at.isoformat() + "Z",
-        updated_at=conversation.updated_at.isoformat() + "Z",
-    )
+
+            # Convert to agent input format
+            input_items = await simple_to_agent_input(items_page.data)
+
+            # Create agent context
+            agent_context = AgentContext(
+                thread=thread,
+                store=self.store,
+                request_context=context,
+            )
+
+            # Run agent with MCP tools and stream response
+            result = Runner.run_streamed(
+                todo_assistant,
+                input_items,
+                context=agent_context,
+            )
+
+            async for event in stream_agent_response(agent_context, result):
+                yield event
+
+        except Exception as e:
+            print(f"ChatKit error: {e}")
+            yield ThreadItemDoneEvent(
+                item=AssistantMessageItem(
+                    thread_id=thread.id,
+                    id=self.store.generate_item_id("message", thread, context),
+                    created_at=datetime.now(),
+                    content=[AssistantMessageContent(
+                        text="I'm having trouble right now. Please try again."
+                    )],
+                )
+            )
+
+
+# Create server instance
+server = TodoChatKitServer(store=store)
+
+
+@router.post("/chatkit")
+async def chatkit_endpoint(request: Request):
+    """Main ChatKit endpoint - handles all chat operations."""
+
+    # Extract user from auth cookie
+    auth_header = request.headers.get("authorization", "")
+    user_id = "anonymous"
+
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        try:
+            from auth import decode_token
+            payload = decode_token(token)
+            user_id = payload.get("sub", "anonymous")
+        except Exception:
+            pass
+
+    # Create database session
+    with Session(engine) as db_session:
+        context = RequestContext(user_id=user_id, db_session=db_session)
+
+        result = await server.process(await request.body(), context)
+
+        if isinstance(result, StreamingResult):
+            return StreamingResponse(result, media_type="text/event-stream")
+        return Response(content=result.json, media_type="application/json")
