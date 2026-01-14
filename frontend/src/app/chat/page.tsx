@@ -7,6 +7,7 @@ import { ChatKit, useChatKit } from '@openai/chatkit-react';
 import { useAuthContext } from '@/lib/auth';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const DOMAIN_KEY = process.env.NEXT_PUBLIC_CHATKIT_DOMAIN_KEY || '';
 
 export default function ChatPage() {
   const { user, isLoading: isAuthLoading } = useAuthContext();
@@ -17,6 +18,8 @@ export default function ChatPage() {
     api: {
       // Point to our custom ChatKit server
       url: `${API_BASE}/api/chatkit`,
+      // Domain key from OpenAI (required for custom backends)
+      domainKey: DOMAIN_KEY,
       // Custom fetch to include auth credentials
       fetch: async (input, init) => {
         return fetch(input, {
