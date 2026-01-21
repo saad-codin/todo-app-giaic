@@ -1,0 +1,35 @@
+# Local values for Todo Chatbot deployment
+# Copy this file to values-local.yaml and fill in your secrets
+# IMPORTANT: Never commit values-local.yaml to version control
+
+# Backend secrets - REQUIRED
+backend:
+  secrets:
+    # Neon PostgreSQL connection string
+    DATABASE_URL: "postgresql://user:password@host.neon.tech/dbname?sslmode=require"
+    # OpenAI API key for AI features
+    OPENAI_API_KEY: "sk-..."
+    # JWT signing secret (generate with: openssl rand -base64 32)
+    JWT_SECRET: "your-jwt-secret-here"
+    # Better Auth secret (generate with: openssl rand -base64 32)
+    BETTER_AUTH_SECRET: "your-auth-secret-here"
+
+# Frontend configuration - OPTIONAL
+frontend:
+  env:
+    # ChatKit domain key (from OpenAI platform)
+    NEXT_PUBLIC_CHATKIT_DOMAIN_KEY: "domain_pk_6966c1e2998c8194a1d76763191cf6f805b23bc4ca10d1e4"
+
+# Example: Override replica counts for testing
+# backend:
+#   replicaCount: 2
+# frontend:
+#   replicaCount: 2
+
+# Example: Use custom image tags
+# backend:
+#   image:
+#     tag: "v1.0.1"
+# frontend:
+#   image:
+#     tag: "v1.0.1"

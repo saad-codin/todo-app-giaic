@@ -5,6 +5,7 @@ python-jose[cryptography]
 python-multipart
 python-dotenv
 psycopg2-binary
+email-validator
 # Phase III: AI-Powered Chatbot (Custom ChatKit server with MCP tools)
 openai-agents
 openai-chatkit

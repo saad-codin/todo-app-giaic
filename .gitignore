@@ -46,3 +46,8 @@ Thumbs.db
 *.log
 .env
 .env.*
+
+# Kubernetes/Helm local values (contains secrets)
+helm/*/values-local.yaml
+values-local.yaml
+minikube-linux-amd64

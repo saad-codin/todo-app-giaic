@@ -1,0 +1,57 @@
+# Default values for todo-chatbot Helm chart
+# This is a YAML-formatted file.
+
+# Frontend configuration (Next.js with ChatKit)
+frontend:
+  replicaCount: 1
+  image:
+    repository: todo-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  env:
+    NEXT_PUBLIC_API_URL: "http://backend-svc:8000"
+    NEXT_PUBLIC_CHATKIT_DOMAIN_KEY: ""
+
+# Backend configuration (FastAPI with Agents SDK)
+backend:
+  replicaCount: 1
+  image:
+    repository: todo-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  env:
+    FRONTEND_URL: "http://frontend-svc:3000"
+  # Secrets - override these in values-local.yaml
+  secrets:
+    DATABASE_URL: ""
+    OPENAI_API_KEY: ""
+    JWT_SECRET: ""
+    BETTER_AUTH_SECRET: ""
+
+# Common configuration
+common:
+  namespace: todo-chatbot
+  labels:
+    app.kubernetes.io/name: todo-chatbot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm

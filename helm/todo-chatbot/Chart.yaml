@@ -1,0 +1,18 @@
+apiVersion: v2
+name: todo-chatbot
+description: AI-Powered Todo Chatbot with ChatKit frontend and FastAPI backend
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - todo
+  - chatbot
+  - ai
+  - kubernetes
+  - helm
+maintainers:
+  - name: Developer
+    email: developer@example.com
+home: https://github.com/example/todo-chatbot
+sources:
+  - https://github.com/example/todo-chatbot
