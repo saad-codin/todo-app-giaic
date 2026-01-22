@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
+gunicorn
 sqlmodel
 python-jose[cryptography]
 python-multipart
