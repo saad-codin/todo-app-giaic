@@ -66,6 +66,20 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // Token storage
 let authToken: string | null = null;
+let initialized = false;
+
+export function initAuth() {
+  if (initialized) return;
+  if (typeof window !== 'undefined') {
+    authToken = localStorage.getItem('auth_token');
+    initialized = true;
+  }
+}
+
+// Initialize on module load (client-side only)
+if (typeof window !== 'undefined') {
+  initAuth();
+}
 
 export function setAuthToken(token: string | null) {
   authToken = token;
@@ -79,9 +93,8 @@ export function setAuthToken(token: string | null) {
 }
 
 export function getAuthToken(): string | null {
-  if (authToken) return authToken;
-  if (typeof window !== 'undefined') {
-    authToken = localStorage.getItem('auth_token');
+  if (!initialized && typeof window !== 'undefined') {
+    initAuth();
   }
   return authToken;
 }
