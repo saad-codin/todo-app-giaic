@@ -118,8 +118,8 @@ def set_auth_cookie(response: Response, token: str):
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=False,  # Set to True in production with HTTPS
-        samesite="lax",
+        secure=True,  # Required for cross-domain cookies
+        samesite="none",  # Required for cross-domain cookies
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
