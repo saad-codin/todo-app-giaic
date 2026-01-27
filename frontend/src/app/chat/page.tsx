@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Script from 'next/script';
 import { ChatKit, useChatKit } from '@openai/chatkit-react';
 import { useAuthContext } from '@/lib/auth';
+import { getAuthToken } from '@/lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const DOMAIN_KEY = process.env.NEXT_PUBLIC_CHATKIT_DOMAIN_KEY || '';
@@ -22,9 +23,14 @@ export default function ChatPage() {
       domainKey: DOMAIN_KEY,
       // Custom fetch to include auth credentials
       fetch: async (input, init) => {
+        const token = getAuthToken();
         return fetch(input, {
           ...init,
           credentials: 'include',
+          headers: {
+            ...init?.headers,
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
         });
       },
     },
