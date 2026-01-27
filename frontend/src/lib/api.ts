@@ -64,17 +64,46 @@ export interface ConversationDetailResponse {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+// Token storage
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null) {
+  authToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) {
+      localStorage.setItem('auth_token', token);
+    } else {
+      localStorage.removeItem('auth_token');
+    }
+  }
+}
+
+export function getAuthToken(): string | null {
+  if (authToken) return authToken;
+  if (typeof window !== 'undefined') {
+    authToken = localStorage.getItem('auth_token');
+  }
+  return authToken;
+}
+
 async function fetchWithAuth<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const token = getAuthToken();
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+
+  if (token) {
+    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
-    credentials: 'include', // Include cookies for JWT
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
+    credentials: 'include', // Still include for cookie fallback
+    headers,
   });
 
   if (!response.ok) {
@@ -98,22 +127,34 @@ function buildQueryString(params: object): string {
 
 export const api = {
   // Auth endpoints
-  signUp: (data: SignUpRequest) =>
-    fetchWithAuth<AuthResponse>('/api/auth/signup', {
+  signUp: async (data: SignUpRequest) => {
+    const response = await fetchWithAuth<AuthResponse & { token?: string }>('/api/auth/signup', {
       method: 'POST',
       body: JSON.stringify(data),
-    }),
+    });
+    if (response.token) {
+      setAuthToken(response.token);
+    }
+    return response;
+  },
 
-  signIn: (data: SignInRequest) =>
-    fetchWithAuth<AuthResponse>('/api/auth/signin', {
+  signIn: async (data: SignInRequest) => {
+    const response = await fetchWithAuth<AuthResponse & { token?: string }>('/api/auth/signin', {
       method: 'POST',
       body: JSON.stringify(data),
-    }),
+    });
+    if (response.token) {
+      setAuthToken(response.token);
+    }
+    return response;
+  },
 
-  signOut: () =>
-    fetchWithAuth<{ success: boolean }>('/api/auth/signout', {
+  signOut: async () => {
+    setAuthToken(null);
+    return fetchWithAuth<{ success: boolean }>('/api/auth/signout', {
       method: 'POST',
-    }),
+    });
+  },
 
   getMe: () =>
     fetchWithAuth<{ user: User }>('/api/auth/me'),

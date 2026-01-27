@@ -37,6 +37,7 @@ class SignInRequest(BaseModel):
 class AuthResponse(BaseModel):
     """Auth response body."""
     user: UserResponse
+    token: str | None = None
 
 
 class SuccessResponse(BaseModel):
@@ -98,7 +99,8 @@ async def signup(
             email=user.email,
             name=user.name,
             createdAt=user.created_at.isoformat() + "Z",
-        )
+        ),
+        token=access_token,
     )
 
 
@@ -130,7 +132,8 @@ async def signin(
             email=user.email,
             name=user.name,
             createdAt=user.created_at.isoformat() + "Z",
-        )
+        ),
+        token=access_token,
     )
 
 
