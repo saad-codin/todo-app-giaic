@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Script from 'next/script';
 import { ChatKit, useChatKit } from '@openai/chatkit-react';
 import { useAuthContext } from '@/lib/auth';
 import { getAuthToken } from '@/lib/api';
@@ -14,6 +13,7 @@ const DOMAIN_KEY = process.env.NEXT_PUBLIC_CHATKIT_DOMAIN_KEY || '';
 console.log('[ChatKit Debug] API_BASE:', API_BASE);
 console.log('[ChatKit Debug] DOMAIN_KEY exists:', !!DOMAIN_KEY);
 console.log('[ChatKit Debug] DOMAIN_KEY length:', DOMAIN_KEY.length);
+console.log('[ChatKit Debug] Full URL:', `${API_BASE}/api/chatkit`);
 
 export default function ChatPage() {
   const { user, isLoading: isAuthLoading } = useAuthContext();
@@ -32,7 +32,7 @@ export default function ChatPage() {
   }, []);
 
   // ChatKit hook - connects to our custom backend with MCP tools
-  const { control } = useChatKit({
+  const chatKitResult = useChatKit({
     api: {
       // Point to our custom ChatKit server
       url: `${API_BASE}/api/chatkit`,
@@ -82,6 +82,14 @@ export default function ChatPage() {
     },
   });
 
+  const { control } = chatKitResult;
+
+  // Debug: log what useChatKit returns
+  useEffect(() => {
+    console.log('[ChatKit Debug] useChatKit result:', chatKitResult);
+    console.log('[ChatKit Debug] control:', control);
+  }, [chatKitResult, control]);
+
   // Redirect to signin if not authenticated
   useEffect(() => {
     if (!isAuthLoading && !user) {
@@ -103,12 +111,6 @@ export default function ChatPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ChatKit Script - required for the component to work */}
-      <Script
-        src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js"
-        strategy="beforeInteractive"
-      />
-
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
