@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Script from 'next/script';
 import { ChatKit, useChatKit } from '@openai/chatkit-react';
 import { useAuthContext } from '@/lib/auth';
 import { getAuthToken } from '@/lib/api';
@@ -19,6 +20,7 @@ export default function ChatPage() {
   const { user, isLoading: isAuthLoading } = useAuthContext();
   const router = useRouter();
   const [chatKitError, setChatKitError] = useState<string | null>(null);
+  const [scriptLoaded, setScriptLoaded] = useState(false);
 
   // Check for missing configuration
   useEffect(() => {
@@ -29,6 +31,22 @@ export default function ChatPage() {
     if (!API_BASE || API_BASE === 'http://localhost:8000') {
       console.warn('[ChatKit Warning] Using default/localhost API_BASE:', API_BASE);
     }
+  }, []);
+
+  // Check if script is already loaded
+  useEffect(() => {
+    const checkChatKit = () => {
+      const defined = !!customElements.get('chatkit-root');
+      console.log('[ChatKit Debug] Web component defined:', defined);
+      if (defined) {
+        setScriptLoaded(true);
+      }
+    };
+
+    // Check immediately and after a delay
+    checkChatKit();
+    const timer = setTimeout(checkChatKit, 1000);
+    return () => clearTimeout(timer);
   }, []);
 
   // ChatKit hook - connects to our custom backend with MCP tools
@@ -111,6 +129,20 @@ export default function ChatPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* ChatKit Script - required for the web component */}
+      <Script
+        src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js"
+        strategy="afterInteractive"
+        onLoad={() => {
+          console.log('[ChatKit Debug] Script loaded!');
+          setScriptLoaded(true);
+        }}
+        onError={(e) => {
+          console.error('[ChatKit Error] Script failed to load:', e);
+          setChatKitError('Failed to load ChatKit script');
+        }}
+      />
+
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -157,7 +189,15 @@ export default function ChatPage() {
                   <p>API_BASE: {API_BASE}</p>
                   <p>DOMAIN_KEY set: {DOMAIN_KEY ? 'Yes' : 'No'}</p>
                   <p>DOMAIN_KEY length: {DOMAIN_KEY.length}</p>
+                  <p>Script loaded: {scriptLoaded ? 'Yes' : 'No'}</p>
                 </div>
+              </div>
+            </div>
+          ) : !scriptLoaded ? (
+            <div className="h-[calc(100vh-10rem)] w-full flex items-center justify-center">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4" />
+                <p className="text-gray-600">Loading ChatKit...</p>
               </div>
             </div>
           ) : (
