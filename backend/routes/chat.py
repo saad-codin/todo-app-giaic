@@ -179,16 +179,18 @@ class TodoChatKitServer(ChatKitServer[RequestContext]):
 server = TodoChatKitServer(store=store)
 
 
-@router.api_route("/chatkit", methods=["GET", "POST"])
+@router.get("/chatkit")
+async def chatkit_get():
+    """ChatKit GET endpoint for initialization."""
+    return Response(
+        content='{"status": "ok", "service": "chatkit"}',
+        media_type="application/json"
+    )
+
+
+@router.post("/chatkit")
 async def chatkit_endpoint(request: Request):
     """Main ChatKit endpoint - handles all chat operations."""
-
-    # Handle GET requests (ChatKit initialization/health check)
-    if request.method == "GET":
-        return Response(
-            content='{"status": "ok", "service": "chatkit"}',
-            media_type="application/json"
-        )
 
     # Extract user from auth cookie
     auth_header = request.headers.get("authorization", "")
