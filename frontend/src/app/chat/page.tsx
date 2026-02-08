@@ -1,21 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import Script from 'next/script';
 import { ChatKit, useChatKit } from '@openai/chatkit-react';
 import { useAuthContext } from '@/lib/auth';
 import { getAuthToken } from '@/lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const DOMAIN_KEY = process.env.NEXT_PUBLIC_CHATKIT_DOMAIN_KEY || '';
+const CHATKIT_SCRIPT_URL = 'https://cdn.platform.openai.com/deployments/chatkit/chatkit.js';
 
-console.log('[ChatKit Debug] API_BASE:', API_BASE);
-console.log('[ChatKit Debug] DOMAIN_KEY exists:', !!DOMAIN_KEY);
-console.log('[ChatKit Debug] DOMAIN_KEY length:', DOMAIN_KEY.length);
-
-// Separate component that only mounts AFTER the ChatKit script is loaded
-// This ensures useChatKit hook runs with the script available
 function ChatKitWidget() {
   const { control } = useChatKit({
     api: {
@@ -23,8 +17,6 @@ function ChatKitWidget() {
       domainKey: DOMAIN_KEY,
       fetch: async (input, init) => {
         const token = getAuthToken();
-        console.log('[ChatKit Debug] Making request to:', input);
-        console.log('[ChatKit Debug] Auth token exists:', !!token);
         return fetch(input, {
           ...init,
           credentials: 'include',
@@ -50,21 +42,56 @@ function ChatKitWidget() {
     },
   });
 
-  console.log('[ChatKit Debug] ChatKitWidget mounted, control:', control);
-
   return (
     <ChatKit
       control={control}
-      className="h-[calc(100vh-10rem)] w-full"
+      style={{ height: 'calc(100vh - 10rem)', width: '100%', minHeight: '600px' }}
     />
   );
+}
+
+function useChatKitScript() {
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const attempted = useRef(false);
+
+  useEffect(() => {
+    if (attempted.current) return;
+    attempted.current = true;
+
+    // Check if already loaded
+    if (customElements.get('openai-chatkit')) {
+      setStatus('ready');
+      return;
+    }
+
+    // Check if script tag already exists
+    const existing = document.querySelector(`script[src="${CHATKIT_SCRIPT_URL}"]`);
+    if (existing) {
+      // Script tag exists, wait for custom element
+      customElements.whenDefined('openai-chatkit').then(() => setStatus('ready'));
+      return;
+    }
+
+    // Load the script
+    const script = document.createElement('script');
+    script.src = CHATKIT_SCRIPT_URL;
+    script.async = true;
+    script.onload = () => {
+      customElements.whenDefined('openai-chatkit').then(() => setStatus('ready'));
+    };
+    script.onerror = () => {
+      setStatus('error');
+    };
+    document.head.appendChild(script);
+  }, []);
+
+  return status;
 }
 
 export default function ChatPage() {
   const { user, isLoading: isAuthLoading } = useAuthContext();
   const router = useRouter();
-  const [scriptLoaded, setScriptLoaded] = useState(false);
-  const [scriptError, setScriptError] = useState<string | null>(null);
+  const scriptStatus = useChatKitScript();
 
   // Redirect to signin if not authenticated
   useEffect(() => {
@@ -87,20 +114,6 @@ export default function ChatPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ChatKit Script - must load before ChatKitWidget mounts */}
-      <Script
-        src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js"
-        strategy="afterInteractive"
-        onLoad={() => {
-          console.log('[ChatKit Debug] Script loaded successfully!');
-          setScriptLoaded(true);
-        }}
-        onError={(e) => {
-          console.error('[ChatKit Error] Script failed to load:', e);
-          setScriptError('Failed to load ChatKit script');
-        }}
-      />
-
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -121,15 +134,21 @@ export default function ChatPage() {
       {/* Main content */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          {scriptError ? (
-            <div className="h-[calc(100vh-10rem)] w-full flex items-center justify-center p-8">
+          {scriptStatus === 'error' ? (
+            <div className="h-[600px] w-full flex items-center justify-center p-8">
               <div className="text-center">
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">ChatKit Error</h2>
-                <p className="text-gray-600">{scriptError}</p>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">Failed to load ChatKit</h2>
+                <p className="text-gray-600 mb-4">The chat component could not be loaded. Check your network connection.</p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Retry
+                </button>
               </div>
             </div>
-          ) : !scriptLoaded ? (
-            <div className="h-[calc(100vh-10rem)] w-full flex items-center justify-center">
+          ) : scriptStatus === 'loading' ? (
+            <div className="h-[600px] w-full flex items-center justify-center">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4" />
                 <p className="text-gray-600">Loading AI Assistant...</p>
