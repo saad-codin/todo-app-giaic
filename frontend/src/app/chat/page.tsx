@@ -10,53 +10,17 @@ import { getAuthToken } from '@/lib/api';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const DOMAIN_KEY = process.env.NEXT_PUBLIC_CHATKIT_DOMAIN_KEY || '';
 
-// Debug logging - remove in production
 console.log('[ChatKit Debug] API_BASE:', API_BASE);
 console.log('[ChatKit Debug] DOMAIN_KEY exists:', !!DOMAIN_KEY);
 console.log('[ChatKit Debug] DOMAIN_KEY length:', DOMAIN_KEY.length);
-console.log('[ChatKit Debug] Full URL:', `${API_BASE}/api/chatkit`);
 
-export default function ChatPage() {
-  const { user, isLoading: isAuthLoading } = useAuthContext();
-  const router = useRouter();
-  const [chatKitError, setChatKitError] = useState<string | null>(null);
-  const [scriptLoaded, setScriptLoaded] = useState(false);
-
-  // Check for missing configuration
-  useEffect(() => {
-    if (!DOMAIN_KEY) {
-      console.error('[ChatKit Error] NEXT_PUBLIC_CHATKIT_DOMAIN_KEY is not set!');
-      setChatKitError('ChatKit domain key is not configured. Please set NEXT_PUBLIC_CHATKIT_DOMAIN_KEY in environment variables.');
-    }
-    if (!API_BASE || API_BASE === 'http://localhost:8000') {
-      console.warn('[ChatKit Warning] Using default/localhost API_BASE:', API_BASE);
-    }
-  }, []);
-
-  // Check if script is already loaded
-  useEffect(() => {
-    const checkChatKit = () => {
-      const defined = !!customElements.get('chatkit-root');
-      console.log('[ChatKit Debug] Web component defined:', defined);
-      if (defined) {
-        setScriptLoaded(true);
-      }
-    };
-
-    // Check immediately and after a delay
-    checkChatKit();
-    const timer = setTimeout(checkChatKit, 1000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // ChatKit hook - connects to our custom backend with MCP tools
-  const chatKitResult = useChatKit({
+// Separate component that only mounts AFTER the ChatKit script is loaded
+// This ensures useChatKit hook runs with the script available
+function ChatKitWidget() {
+  const { control } = useChatKit({
     api: {
-      // Point to our custom ChatKit server
       url: `${API_BASE}/api/chatkit`,
-      // Domain key from OpenAI (required for custom backends)
       domainKey: DOMAIN_KEY,
-      // Custom fetch to include auth credentials
       fetch: async (input, init) => {
         const token = getAuthToken();
         console.log('[ChatKit Debug] Making request to:', input);
@@ -71,42 +35,36 @@ export default function ChatPage() {
         });
       },
     },
-    // Start screen with todo-specific prompts
     startScreen: {
       greeting: 'Hi! I\'m your AI Todo Assistant. How can I help you manage your tasks today?',
       prompts: [
-        {
-          label: 'Add a task',
-          prompt: 'Add a new task: Buy groceries tomorrow',
-        },
-        {
-          label: 'Show my tasks',
-          prompt: 'Show me all my pending tasks',
-        },
-        {
-          label: 'Complete a task',
-          prompt: 'Mark my first task as complete',
-        },
-        {
-          label: 'Search tasks',
-          prompt: 'Search for tasks related to work',
-        },
+        { label: 'Add a task', prompt: 'Add a new task: Buy groceries tomorrow' },
+        { label: 'Show my tasks', prompt: 'Show me all my pending tasks' },
+        { label: 'Complete a task', prompt: 'Mark my first task as complete' },
+        { label: 'Search tasks', prompt: 'Search for tasks related to work' },
       ],
     },
     theme: 'light',
     onError: ({ error }) => {
       console.error('[ChatKit Error]:', error);
-      setChatKitError(error?.message || 'ChatKit encountered an error');
     },
   });
 
-  const { control } = chatKitResult;
+  console.log('[ChatKit Debug] ChatKitWidget mounted, control:', control);
 
-  // Debug: log what useChatKit returns
-  useEffect(() => {
-    console.log('[ChatKit Debug] useChatKit result:', chatKitResult);
-    console.log('[ChatKit Debug] control:', control);
-  }, [chatKitResult, control]);
+  return (
+    <ChatKit
+      control={control}
+      className="h-[calc(100vh-10rem)] w-full"
+    />
+  );
+}
+
+export default function ChatPage() {
+  const { user, isLoading: isAuthLoading } = useAuthContext();
+  const router = useRouter();
+  const [scriptLoaded, setScriptLoaded] = useState(false);
+  const [scriptError, setScriptError] = useState<string | null>(null);
 
   // Redirect to signin if not authenticated
   useEffect(() => {
@@ -129,17 +87,17 @@ export default function ChatPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ChatKit Script - required for the web component */}
+      {/* ChatKit Script - must load before ChatKitWidget mounts */}
       <Script
         src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js"
         strategy="afterInteractive"
         onLoad={() => {
-          console.log('[ChatKit Debug] Script loaded!');
+          console.log('[ChatKit Debug] Script loaded successfully!');
           setScriptLoaded(true);
         }}
         onError={(e) => {
           console.error('[ChatKit Error] Script failed to load:', e);
-          setChatKitError('Failed to load ChatKit script');
+          setScriptError('Failed to load ChatKit script');
         }}
       />
 
@@ -149,62 +107,36 @@ export default function ChatPage() {
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4">
               <a href="/dashboard" className="text-gray-600 hover:text-gray-900">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth={1.5}
-                  stroke="currentColor"
-                  className="w-6 h-6"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
-                  />
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
                 </svg>
               </a>
-              <h1 className="text-xl font-semibold text-gray-900">
-                AI Todo Assistant
-              </h1>
+              <h1 className="text-xl font-semibold text-gray-900">AI Todo Assistant</h1>
             </div>
-            <div className="text-sm text-gray-500">
-              {user?.email}
-            </div>
+            <div className="text-sm text-gray-500">{user?.email}</div>
           </div>
         </div>
       </header>
 
-      {/* Main content - ChatKit */}
+      {/* Main content */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          {chatKitError ? (
+          {scriptError ? (
             <div className="h-[calc(100vh-10rem)] w-full flex items-center justify-center p-8">
               <div className="text-center">
-                <div className="text-red-500 text-6xl mb-4">⚠️</div>
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">ChatKit Configuration Error</h2>
-                <p className="text-gray-600 mb-4">{chatKitError}</p>
-                <div className="text-sm text-gray-500 bg-gray-100 p-4 rounded-lg text-left">
-                  <p className="font-semibold mb-2">Debug Info:</p>
-                  <p>API_BASE: {API_BASE}</p>
-                  <p>DOMAIN_KEY set: {DOMAIN_KEY ? 'Yes' : 'No'}</p>
-                  <p>DOMAIN_KEY length: {DOMAIN_KEY.length}</p>
-                  <p>Script loaded: {scriptLoaded ? 'Yes' : 'No'}</p>
-                </div>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">ChatKit Error</h2>
+                <p className="text-gray-600">{scriptError}</p>
               </div>
             </div>
           ) : !scriptLoaded ? (
             <div className="h-[calc(100vh-10rem)] w-full flex items-center justify-center">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4" />
-                <p className="text-gray-600">Loading ChatKit...</p>
+                <p className="text-gray-600">Loading AI Assistant...</p>
               </div>
             </div>
           ) : (
-            <ChatKit
-              control={control}
-              className="h-[calc(100vh-10rem)] w-full"
-            />
+            <ChatKitWidget />
           )}
         </div>
       </main>
