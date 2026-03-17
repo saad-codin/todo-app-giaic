@@ -8,6 +8,7 @@ from enum import Enum
 
 class Priority(str, Enum):
     """Task priority levels."""
+    urgent = "urgent"
     high = "high"
     medium = "medium"
     low = "low"
@@ -26,6 +27,60 @@ class MessageRole(str, Enum):
     user = "user"
     assistant = "assistant"
     tool = "tool"
+
+
+class ReminderStatus(str, Enum):
+    """Reminder delivery status."""
+    pending = "pending"
+    sent = "sent"
+    cancelled = "cancelled"
+
+
+class ReminderType(str, Enum):
+    """Reminder timing type."""
+    twenty_four_hours = "24h"
+    one_hour = "1h"
+
+
+class RecurrenceRule(SQLModel, table=True):
+    """Recurrence rule for repeating tasks."""
+    __tablename__ = "recurrence_rule"
+
+    id: str = Field(primary_key=True)
+    task_id: str = Field(foreign_key="task.id", index=True)
+    user_id: str = Field(foreign_key="user.id")
+    frequency: str  # daily, weekly, monthly
+    interval_value: int = Field(default=1)
+    day_of_week: Optional[int] = None     # 0=Mon..6=Sun
+    day_of_month: Optional[int] = None    # 1-28
+    is_completion_based: bool = Field(default=False)
+    next_occurrence: str                   # YYYY-MM-DD
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TaskEvent(SQLModel, table=True):
+    """Immutable task event log (audit stub)."""
+    __tablename__ = "task_event"
+
+    id: str = Field(primary_key=True)
+    event_type: str
+    task_id: str
+    user_id: str
+    payload: dict = Field(sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Reminder(SQLModel, table=True):
+    """Scheduled reminder for a task."""
+    id: str = Field(primary_key=True)
+    task_id: str = Field(foreign_key="task.id", index=True)
+    user_id: str = Field(foreign_key="user.id")
+    trigger_time: datetime
+    reminder_type: ReminderType
+    status: ReminderStatus = Field(default=ReminderStatus.pending)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class UserBase(SQLModel):
@@ -85,6 +140,10 @@ class TaskCreate(SQLModel):
     dueTime: Optional[str] = None
     reminderTime: Optional[str] = None
     recurrence: Optional[Recurrence] = Recurrence.none
+    recurrenceInterval: Optional[int] = None
+    recurrenceDayOfWeek: Optional[int] = None
+    recurrenceDayOfMonth: Optional[int] = None
+    isCompletionBased: Optional[bool] = False
 
 
 class TaskUpdate(SQLModel):
@@ -97,6 +156,10 @@ class TaskUpdate(SQLModel):
     dueTime: Optional[str] = None
     reminderTime: Optional[str] = None
     recurrence: Optional[Recurrence] = None
+    recurrenceInterval: Optional[int] = None
+    recurrenceDayOfWeek: Optional[int] = None
+    recurrenceDayOfMonth: Optional[int] = None
+    isCompletionBased: Optional[bool] = None
 
 
 class TaskResponse(SQLModel):
@@ -111,6 +174,8 @@ class TaskResponse(SQLModel):
     dueTime: Optional[str]
     reminderTime: Optional[str]
     recurrence: Recurrence
+    isCompletionBased: bool = False
+    nextOccurrence: Optional[str] = None
     createdAt: str
     updatedAt: str
 
@@ -128,6 +193,8 @@ class TaskResponse(SQLModel):
             dueTime=task.due_time,
             reminderTime=task.reminder_time,
             recurrence=task.recurrence,
+            isCompletionBased=False,
+            nextOccurrence=None,
             createdAt=task.created_at.isoformat() + "Z",
             updatedAt=task.updated_at.isoformat() + "Z",
         )

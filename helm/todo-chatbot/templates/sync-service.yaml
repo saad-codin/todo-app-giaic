@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sync-svc
+  namespace: {{ .Values.common.namespace }}
+  labels:
+    {{- include "todo-chatbot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sync
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8003
+      targetPort: 8003
+      protocol: TCP
+  selector:
+    {{- include "todo-chatbot.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sync

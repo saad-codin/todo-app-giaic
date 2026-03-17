@@ -51,3 +51,8 @@ Thumbs.db
 helm/*/values-local.yaml
 values-local.yaml
 minikube-linux-amd64
+rpk-linux-amd64.zip
+
+# Sensitive files
+cookies.txt
+backend/.azure/config

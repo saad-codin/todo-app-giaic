@@ -35,13 +35,31 @@ echo -e "${GREEN}Building frontend image...${NC}"
 docker build -t todo-frontend:latest "$PROJECT_ROOT/frontend"
 echo -e "${GREEN}Frontend image built successfully${NC}"
 
+# Build reminder service image
+echo ""
+echo -e "${GREEN}Building reminder-service image...${NC}"
+docker build -t reminder-service:latest "$PROJECT_ROOT/services/reminder"
+echo -e "${GREEN}Reminder service image built successfully${NC}"
+
+# Build recurring service image
+echo ""
+echo -e "${GREEN}Building recurring-service image...${NC}"
+docker build -t recurring-service:latest "$PROJECT_ROOT/services/recurring"
+echo -e "${GREEN}Recurring service image built successfully${NC}"
+
+# Build sync service image
+echo ""
+echo -e "${GREEN}Building sync-service image...${NC}"
+docker build -t sync-service:latest "$PROJECT_ROOT/services/sync"
+echo -e "${GREEN}Sync service image built successfully${NC}"
+
 # List built images
 echo ""
 echo -e "${GREEN}Built images:${NC}"
-docker images | grep -E "^(todo-backend|todo-frontend|REPOSITORY)"
+docker images | grep -E "^(todo-backend|todo-frontend|reminder-service|recurring-service|sync-service|REPOSITORY)"
 
 echo ""
-echo -e "${GREEN}Build complete!${NC}"
+echo -e "${GREEN}Build complete! (5 images)${NC}"
 echo ""
 echo "Next steps:"
 echo "  1. If using Minikube, run: eval \$(minikube docker-env)"

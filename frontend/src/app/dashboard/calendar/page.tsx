@@ -41,9 +41,9 @@ export default function CalendarPage() {
   }, [selectedDate, tasks]);
 
   return (
-    <div className="p-6">
+    <div className="p-6 bg-background min-h-full">
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Calendar</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Calendar</h1>
 
         <CalendarNav
           currentDate={currentDate}

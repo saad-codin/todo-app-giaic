@@ -13,17 +13,17 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const inputId = id || props.name;
     const hasError = !!error;
 
-    const baseClasses = 'block w-full rounded-lg border px-4 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-0 transition-colors';
+    const baseClasses = 'block w-full rounded-xl border px-4 py-2.5 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-sage-500/50 transition-colors';
     const stateClasses = hasError
-      ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
-      : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500';
+      ? 'border-red-400 dark:border-red-700'
+      : 'border-gray-200 dark:border-gray-700';
 
     return (
       <div className="w-full">
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
           >
             {label}
           </label>
@@ -37,12 +37,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           {...props}
         />
         {hasError && (
-          <p id={`${inputId}-error`} className="mt-1 text-sm text-red-600">
+          <p id={`${inputId}-error`} className="mt-1 text-xs text-red-500">
             {error}
           </p>
         )}
         {helperText && !hasError && (
-          <p className="mt-1 text-sm text-gray-500">{helperText}</p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{helperText}</p>
         )}
       </div>
     );
@@ -51,7 +51,6 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
 
 Input.displayName = 'Input';
 
-// Textarea variant
 export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
   error?: string;
@@ -63,17 +62,17 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     const textareaId = id || props.name;
     const hasError = !!error;
 
-    const baseClasses = 'block w-full rounded-lg border px-4 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-0 transition-colors resize-y min-h-[100px]';
+    const baseClasses = 'block w-full rounded-xl border px-4 py-2.5 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-sage-500/50 transition-colors resize-y min-h-[90px]';
     const stateClasses = hasError
-      ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
-      : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500';
+      ? 'border-red-400 dark:border-red-700'
+      : 'border-gray-200 dark:border-gray-700';
 
     return (
       <div className="w-full">
         {label && (
           <label
             htmlFor={textareaId}
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
           >
             {label}
           </label>
@@ -87,12 +86,12 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           {...props}
         />
         {hasError && (
-          <p id={`${textareaId}-error`} className="mt-1 text-sm text-red-600">
+          <p id={`${textareaId}-error`} className="mt-1 text-xs text-red-500">
             {error}
           </p>
         )}
         {helperText && !hasError && (
-          <p className="mt-1 text-sm text-gray-500">{helperText}</p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{helperText}</p>
         )}
       </div>
     );
@@ -101,7 +100,6 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
 
 Textarea.displayName = 'Textarea';
 
-// Select variant
 export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
@@ -114,12 +112,11 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const selectId = id || props.name;
     const hasError = !!error;
 
-    const baseClasses = 'block w-full rounded-lg border px-4 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-0 transition-colors bg-white';
+    const baseClasses = 'block w-full rounded-xl border px-4 py-2.5 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sage-500/50 transition-colors';
     const stateClasses = hasError
-      ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
-      : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500';
+      ? 'border-red-400 dark:border-red-700'
+      : 'border-gray-200 dark:border-gray-700';
 
-    // Extract width classes from className to apply to wrapper
     const widthMatch = className.match(/w-\S+/);
     const wrapperClass = widthMatch ? widthMatch[0] : 'w-full';
 
@@ -128,7 +125,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         {label && (
           <label
             htmlFor={selectId}
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
           >
             {label}
           </label>
@@ -148,12 +145,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           ))}
         </select>
         {hasError && (
-          <p id={`${selectId}-error`} className="mt-1 text-sm text-red-600">
+          <p id={`${selectId}-error`} className="mt-1 text-xs text-red-500">
             {error}
           </p>
         )}
         {helperText && !hasError && (
-          <p className="mt-1 text-sm text-gray-500">{helperText}</p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{helperText}</p>
         )}
       </div>
     );

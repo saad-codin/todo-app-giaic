@@ -79,3 +79,67 @@ Backend selector labels
 {{ include "todo-chatbot.selectorLabels" . }}
 app.kubernetes.io/component: backend
 {{- end }}
+
+{{/*
+Reminder service labels
+*/}}
+{{- define "todo-chatbot.reminder.labels" -}}
+{{ include "todo-chatbot.labels" . }}
+app.kubernetes.io/component: reminder
+{{- end }}
+
+{{/*
+Reminder service selector labels
+*/}}
+{{- define "todo-chatbot.reminder.selectorLabels" -}}
+{{ include "todo-chatbot.selectorLabels" . }}
+app.kubernetes.io/component: reminder
+{{- end }}
+
+{{/*
+Recurring service labels
+*/}}
+{{- define "todo-chatbot.recurring.labels" -}}
+{{ include "todo-chatbot.labels" . }}
+app.kubernetes.io/component: recurring
+{{- end }}
+
+{{/*
+Recurring service selector labels
+*/}}
+{{- define "todo-chatbot.recurring.selectorLabels" -}}
+{{ include "todo-chatbot.selectorLabels" . }}
+app.kubernetes.io/component: recurring
+{{- end }}
+
+{{/*
+Sync service labels
+*/}}
+{{- define "todo-chatbot.sync.labels" -}}
+{{ include "todo-chatbot.labels" . }}
+app.kubernetes.io/component: sync
+{{- end }}
+
+{{/*
+Sync service selector labels
+*/}}
+{{- define "todo-chatbot.sync.selectorLabels" -}}
+{{ include "todo-chatbot.selectorLabels" . }}
+app.kubernetes.io/component: sync
+{{- end }}
+
+{{/*
+Redpanda labels
+*/}}
+{{- define "todo-chatbot.redpanda.labels" -}}
+{{ include "todo-chatbot.labels" . }}
+app.kubernetes.io/component: redpanda
+{{- end }}
+
+{{/*
+Redpanda selector labels
+*/}}
+{{- define "todo-chatbot.redpanda.selectorLabels" -}}
+{{ include "todo-chatbot.selectorLabels" . }}
+app.kubernetes.io/component: redpanda
+{{- end }}

@@ -41,6 +41,15 @@ fi
 
 echo -e "${GREEN}All prerequisites satisfied${NC}"
 
+# Install Dapr CLI if not present
+if ! command -v dapr &> /dev/null; then
+    echo -e "${YELLOW}Installing Dapr CLI...${NC}"
+    wget -q https://raw.githubusercontent.com/dapr/cli/master/install/install.sh -O - | /bin/bash
+    echo -e "${GREEN}Dapr CLI installed${NC}"
+else
+    echo -e "${GREEN}Dapr CLI already installed: $(dapr --version | head -1)${NC}"
+fi
+
 # Check if Minikube is already running
 if minikube status | grep -q "Running"; then
     echo -e "${YELLOW}Minikube is already running${NC}"
@@ -53,6 +62,22 @@ fi
 echo ""
 echo -e "${YELLOW}Verifying cluster...${NC}"
 kubectl cluster-info
+
+# Install Dapr on cluster
+echo ""
+echo -e "${YELLOW}Checking Dapr on cluster...${NC}"
+if kubectl get namespace dapr-system &> /dev/null; then
+    echo -e "${GREEN}Dapr is already installed on the cluster${NC}"
+else
+    echo -e "${YELLOW}Installing Dapr on Kubernetes cluster...${NC}"
+    dapr init -k --runtime-version 1.14.4 --wait
+    echo -e "${GREEN}Dapr installed on cluster${NC}"
+fi
+
+# Verify Dapr is running
+echo ""
+echo -e "${YELLOW}Verifying Dapr installation...${NC}"
+dapr status -k
 
 # Show status
 echo ""

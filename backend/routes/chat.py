@@ -1,38 +1,26 @@
-"""ChatKit server and REST chat endpoint for AI-powered todo chatbot with MCP tools."""
+"""REST chat endpoint for AI-powered todo chatbot with MCP tools."""
 
 import uuid
-from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from agents import Runner
-from chatkit.server import ChatKitServer, StreamingResult
-from chatkit.store import Store, NotFoundError, Page
-from chatkit.types import (
-    Attachment,
-    ThreadItem,
-    ThreadMetadata,
-    UserMessageItem,
-    ThreadStreamEvent,
-    AssistantMessageItem,
-    AssistantMessageContent,
-    ThreadItemDoneEvent,
-)
-from chatkit.agents import AgentContext, simple_to_agent_input, stream_agent_response
 
+from auth import get_current_user
 from db import engine
 from sqlmodel import Session, select
-from models import Conversation, ChatMessage, MessageRole
+from sqlalchemy import func
+from models import Conversation, ChatMessage, MessageRole, User
 
 router = APIRouter(prefix="/api", tags=["Chat"])
 
 
 # ---------------------------------------------------------------------------
-# REST endpoint: POST /api/{user_id}/chat
+# Request / Response schemas
 # ---------------------------------------------------------------------------
 
 class ChatRestRequest(BaseModel):
@@ -46,19 +34,28 @@ class ChatRestResponse(BaseModel):
     tool_calls: Optional[list[dict]] = None
 
 
-@router.post("/{user_id}/chat", response_model=ChatRestResponse)
-async def rest_chat(user_id: str, body: ChatRestRequest, request: Request):
-    """Stateless REST chat endpoint with DB-persisted conversations."""
-    agent = request.app.state.todo_agent
+# ---------------------------------------------------------------------------
+# Shared chat logic
+# ---------------------------------------------------------------------------
+
+async def _run_chat(user_id: str, body: ChatRestRequest, app) -> ChatRestResponse:
+    """Core chat logic shared by auth and user-id endpoints."""
+    agent = getattr(app.state, "todo_agent", None)
+    if agent is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Chat service unavailable — AI agent not initialized. Check OPENAI_API_KEY.",
+        )
 
     with Session(engine) as db:
         # Get or create conversation
+        conversation = None
         if body.conversation_id:
             conversation = db.get(Conversation, body.conversation_id)
             if not conversation or conversation.user_id != user_id:
                 conversation = None
 
-        if not body.conversation_id or conversation is None:
+        if conversation is None:
             conversation = Conversation(
                 id=str(uuid.uuid4()),
                 user_id=user_id,
@@ -125,217 +122,161 @@ async def rest_chat(user_id: str, body: ChatRestRequest, request: Request):
         db.add(conversation)
         db.commit()
 
+        # Capture id before session closes (avoids DetachedInstanceError)
+        conversation_id = conversation.id
+
     return ChatRestResponse(
-        conversation_id=conversation.id,
+        conversation_id=conversation_id,
         response=response_text,
         tool_calls=tool_calls_info if tool_calls_info else None,
     )
 
 
 # ---------------------------------------------------------------------------
-# ChatKit server (streaming, used by the ChatKit frontend widget)
+# POST /api/chat — auth-based (extracts user_id from JWT)
 # ---------------------------------------------------------------------------
 
-class RequestContext:
-    """Context passed through ChatKit operations."""
-    def __init__(self, user_id: str, agent=None):
-        self.user_id = user_id
-        self.agent = agent
+@router.post("/chat", response_model=ChatRestResponse)
+async def auth_chat(
+    body: ChatRestRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """Chat endpoint using JWT auth — no user_id required in URL."""
+    return await _run_chat(current_user.id, body, request.app)
 
 
-class InMemoryChatKitStore(Store[RequestContext]):
-    """In-memory store for ChatKit threads and items."""
+# ---------------------------------------------------------------------------
+# POST /api/{user_id}/chat — legacy endpoint (user_id in URL)
+# ---------------------------------------------------------------------------
 
-    def __init__(self):
-        self.threads: dict[str, ThreadMetadata] = {}
-        self.items: dict[str, list[ThreadItem]] = {}
-        self.attachments: dict[str, Attachment] = {}
-
-    async def load_thread(self, thread_id: str, context: RequestContext) -> ThreadMetadata:
-        if thread_id not in self.threads:
-            raise NotFoundError(f"Thread {thread_id} not found")
-        return self.threads[thread_id]
-
-    async def save_thread(self, thread: ThreadMetadata, context: RequestContext) -> None:
-        self.threads[thread.id] = thread
-
-    async def load_threads(
-        self, limit: int, after: str | None, order: str, context: RequestContext
-    ) -> Page[ThreadMetadata]:
-        threads = list(self.threads.values())
-        return self._paginate(threads, after, limit, order, lambda t: t.created_at, lambda t: t.id)
-
-    async def load_thread_items(
-        self, thread_id: str, after: str | None, limit: int, order: str, context: RequestContext
-    ) -> Page[ThreadItem]:
-        items = self.items.get(thread_id, [])
-        return self._paginate(items, after, limit, order, lambda i: i.created_at, lambda i: i.id)
-
-    async def add_thread_item(self, thread_id: str, item: ThreadItem, context: RequestContext) -> None:
-        if thread_id not in self.items:
-            self.items[thread_id] = []
-        self.items[thread_id].append(item)
-
-    async def save_item(self, thread_id: str, item: ThreadItem, context: RequestContext) -> None:
-        if thread_id not in self.items:
-            self.items[thread_id] = []
-        items = self.items[thread_id]
-        for idx, existing in enumerate(items):
-            if existing.id == item.id:
-                items[idx] = item
-                return
-        items.append(item)
-
-    async def load_item(self, thread_id: str, item_id: str, context: RequestContext) -> ThreadItem:
-        for item in self.items.get(thread_id, []):
-            if item.id == item_id:
-                return item
-        raise NotFoundError(f"Item {item_id} not found")
-
-    async def delete_thread(self, thread_id: str, context: RequestContext) -> None:
-        self.threads.pop(thread_id, None)
-        self.items.pop(thread_id, None)
-
-    async def delete_thread_item(self, thread_id: str, item_id: str, context: RequestContext) -> None:
-        if thread_id in self.items:
-            self.items[thread_id] = [i for i in self.items[thread_id] if i.id != item_id]
-
-    async def save_attachment(self, attachment: Attachment, context: RequestContext) -> None:
-        self.attachments[attachment.id] = attachment
-
-    async def load_attachment(self, attachment_id: str, context: RequestContext) -> Attachment:
-        if attachment_id not in self.attachments:
-            raise NotFoundError(f"Attachment {attachment_id} not found")
-        return self.attachments[attachment_id]
-
-    async def delete_attachment(self, attachment_id: str, context: RequestContext) -> None:
-        self.attachments.pop(attachment_id, None)
-
-    def _paginate(self, rows, after, limit, order, sort_key, cursor_key):
-        sorted_rows = sorted(rows, key=sort_key, reverse=order == "desc")
-        start = 0
-        if after:
-            for idx, row in enumerate(sorted_rows):
-                if cursor_key(row) == after:
-                    start = idx + 1
-                    break
-        data = sorted_rows[start:start + limit]
-        has_more = start + limit < len(sorted_rows)
-        next_after = cursor_key(data[-1]) if has_more and data else None
-        return Page(data=data, has_more=has_more, after=next_after)
+@router.post("/{user_id}/chat", response_model=ChatRestResponse)
+async def rest_chat(user_id: str, body: ChatRestRequest, request: Request):
+    """Stateless REST chat endpoint with DB-persisted conversations."""
+    return await _run_chat(user_id, body, request.app)
 
 
-# Global store instance
-store = InMemoryChatKitStore()
+# ---------------------------------------------------------------------------
+# GET /api/chat/conversations — list conversations for current user
+# ---------------------------------------------------------------------------
+
+class ConversationSummary(BaseModel):
+    id: str
+    title: Optional[str]
+    created_at: str
+    updated_at: str
+    message_count: int
 
 
-class TodoChatKitServer(ChatKitServer[RequestContext]):
-    """ChatKit server with MCP tools for todo management."""
+class ConversationListResponse(BaseModel):
+    conversations: list[ConversationSummary]
+    total: int
 
-    async def respond(
-        self,
-        thread: ThreadMetadata,
-        input_user_message: UserMessageItem | None,
-        context: RequestContext,
-    ) -> AsyncIterator[ThreadStreamEvent]:
-        """Generate response using the MCP-backed todo agent."""
-        agent = context.agent
-        if agent is None:
-            yield ThreadItemDoneEvent(
-                item=AssistantMessageItem(
-                    thread_id=thread.id,
-                    id=self.store.generate_item_id("message", thread, context),
-                    created_at=datetime.now(),
-                    content=[AssistantMessageContent(
-                        text="Agent not available. Please try again later."
-                    )],
-                )
+
+@router.get("/chat/conversations", response_model=ConversationListResponse)
+async def list_conversations(
+    request: Request,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+):
+    """List conversations for the authenticated user."""
+    with Session(engine) as db:
+        rows = db.exec(
+            select(Conversation)
+            .where(Conversation.user_id == current_user.id)
+            .order_by(Conversation.updated_at.desc())
+            .limit(limit)
+        ).all()
+
+        summaries = []
+        for conv in rows:
+            count = db.exec(
+                select(func.count(ChatMessage.id))
+                .where(ChatMessage.conversation_id == conv.id)
+            ).one()
+            summaries.append(ConversationSummary(
+                id=conv.id,
+                title=conv.title,
+                created_at=conv.created_at.isoformat(),
+                updated_at=conv.updated_at.isoformat(),
+                message_count=count,
+            ))
+
+    return ConversationListResponse(conversations=summaries, total=len(summaries))
+
+
+# ---------------------------------------------------------------------------
+# GET /api/chat/conversations/{id} — conversation detail with messages
+# ---------------------------------------------------------------------------
+
+class ChatMessageOut(BaseModel):
+    id: str
+    role: str
+    content: str
+    tool_calls: Optional[list[dict]] = None
+    created_at: str
+
+
+class ConversationDetailResponse(BaseModel):
+    id: str
+    title: Optional[str]
+    messages: list[ChatMessageOut]
+    created_at: str
+    updated_at: str
+
+
+@router.get("/chat/conversations/{conversation_id}", response_model=ConversationDetailResponse)
+async def get_conversation(
+    conversation_id: str,
+    request: Request,
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+):
+    """Get a conversation with its messages."""
+    with Session(engine) as db:
+        conversation = db.get(Conversation, conversation_id)
+        if not conversation or conversation.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
+        messages = db.exec(
+            select(ChatMessage)
+            .where(ChatMessage.conversation_id == conversation_id)
+            .order_by(ChatMessage.created_at.asc())
+            .limit(limit)
+        ).all()
+
+    return ConversationDetailResponse(
+        id=conversation.id,
+        title=conversation.title,
+        messages=[
+            ChatMessageOut(
+                id=m.id,
+                role=m.role.value,
+                content=m.content,
+                tool_calls=m.tool_calls if isinstance(m.tool_calls, list) else None,
+                created_at=m.created_at.isoformat(),
             )
-            return
-
-        try:
-            # Load conversation history
-            items_page = await self.store.load_thread_items(
-                thread.id, after=None, limit=20, order="asc", context=context
-            )
-
-            # Convert to agent input format and prepend user_id system message
-            input_items = await simple_to_agent_input(items_page.data)
-            input_items.insert(0, {
-                "role": "system",
-                "content": f"The current user_id is: {context.user_id}. Always pass this user_id to every tool call.",
-            })
-
-            # Create agent context
-            agent_context = AgentContext(
-                thread=thread,
-                store=self.store,
-                request_context=context,
-            )
-
-            # Run agent with MCP tools and stream response
-            result = Runner.run_streamed(
-                agent,
-                input_items,
-                context=agent_context,
-            )
-
-            async for event in stream_agent_response(agent_context, result):
-                yield event
-
-        except Exception as e:
-            print(f"ChatKit error: {e}")
-            yield ThreadItemDoneEvent(
-                item=AssistantMessageItem(
-                    thread_id=thread.id,
-                    id=self.store.generate_item_id("message", thread, context),
-                    created_at=datetime.now(),
-                    content=[AssistantMessageContent(
-                        text="I'm having trouble right now. Please try again."
-                    )],
-                )
-            )
+            for m in messages
+        ],
+        created_at=conversation.created_at.isoformat(),
+        updated_at=conversation.updated_at.isoformat(),
+    )
 
 
-# Create server instance
-chatkit_server = TodoChatKitServer(store=store)
-
+# ---------------------------------------------------------------------------
+# ChatKit stub (kept for compatibility, returns 501)
+# ---------------------------------------------------------------------------
 
 @router.api_route("/chatkit", methods=["GET", "POST"])
 async def chatkit_endpoint(request: Request):
-    """Main ChatKit endpoint - handles all chat operations."""
-
+    """ChatKit endpoint stub — use POST /api/chat instead."""
     if request.method == "GET":
         return Response(
             content='{"status": "ok", "service": "chatkit"}',
             media_type="application/json"
         )
-
-    # Extract user from auth header
-    auth_header = request.headers.get("authorization", "")
-    user_id = "anonymous"
-
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        try:
-            from auth import decode_token
-            payload = decode_token(token)
-            if payload:
-                user_id = payload.get("sub", "anonymous")
-        except Exception:
-            pass
-
-    # Get agent from app state
-    agent = request.app.state.todo_agent
-
-    context = RequestContext(user_id=user_id, agent=agent)
-
-    try:
-        result = await chatkit_server.process(await request.body(), context)
-    except Exception as e:
-        raise e
-
-    if isinstance(result, StreamingResult):
-        return StreamingResponse(result, media_type="text/event-stream")
-
-    return Response(content=result.json, media_type="application/json")
+    return Response(
+        content='{"error": "ChatKit server not available. Use POST /api/chat instead."}',
+        media_type="application/json",
+        status_code=501
+    )

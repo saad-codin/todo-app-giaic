@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Pencil, Trash2, Repeat } from 'lucide-react';
 import type { Task } from '@/types/task';
 import { PriorityBadge, TagBadge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 import { getRelativeDate, formatTime, checkIsToday, checkIsOverdue } from '@/lib/utils/date';
 
 interface TaskCardProps {
@@ -24,63 +25,78 @@ export function TaskCard({
   onTagClick,
 }: TaskCardProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
 
   const isToday = checkIsToday(task.dueDate);
   const isOverdue = !task.completed && checkIsOverdue(task.dueDate);
 
   const handleToggleComplete = () => {
-    if (task.completed) {
-      onIncomplete(task.id);
-    } else {
-      onComplete(task.id);
-    }
-  };
-
-  const handleDelete = () => {
-    setShowDeleteConfirm(true);
-  };
-
-  const confirmDelete = () => {
-    onDelete(task.id);
-    setShowDeleteConfirm(false);
+    setIsCompleting(true);
+    setTimeout(() => {
+      if (task.completed) {
+        onIncomplete(task.id);
+      } else {
+        onComplete(task.id);
+      }
+      setIsCompleting(false);
+    }, 300);
   };
 
   return (
-    <div
-      className={`relative bg-white rounded-lg border p-4 transition-all ${
-        task.completed ? 'border-gray-200 bg-gray-50' : 'border-gray-200 hover:border-gray-300'
+    <motion.div
+      whileHover={{ y: -1, boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}
+      transition={{ duration: 0.15 }}
+      animate={{ scale: isCompleting ? 1.01 : 1 }}
+      className={`relative group bg-white dark:bg-gray-800 rounded-xl border p-4 transition-colors ${
+        task.completed
+          ? 'border-gray-100 dark:border-gray-700/50 opacity-75'
+          : isOverdue
+          ? 'border-red-200 dark:border-red-900/50'
+          : 'border-gray-100 dark:border-gray-700'
       }`}
     >
       <div className="flex items-start gap-3">
         {/* Checkbox */}
-        <button
+        <motion.button
+          whileTap={{ scale: 0.85 }}
           onClick={handleToggleComplete}
-          className={`flex-shrink-0 w-5 h-5 mt-0.5 rounded border-2 transition-colors ${
+          className={`flex-shrink-0 w-5 h-5 mt-0.5 rounded-full border-2 transition-all flex items-center justify-center ${
             task.completed
-              ? 'bg-green-500 border-green-500 text-white'
-              : 'border-gray-300 hover:border-gray-400'
+              ? 'bg-sage-500 border-sage-500'
+              : 'border-gray-300 dark:border-gray-600 hover:border-sage-400 dark:hover:border-sage-500'
           }`}
           aria-label={task.completed ? 'Mark incomplete' : 'Mark complete'}
         >
           {task.completed && (
-            <svg className="w-full h-full" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <motion.svg
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ duration: 0.15 }}
+              className="w-3 h-3 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-            </svg>
+            </motion.svg>
           )}
-        </button>
+        </motion.button>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
-          <p
-            className={`text-sm font-medium ${
-              task.completed ? 'text-gray-500 line-through' : 'text-gray-900'
+          <motion.p
+            animate={{ opacity: task.completed ? 0.45 : 1 }}
+            className={`text-sm font-medium leading-snug ${
+              task.completed
+                ? 'text-gray-500 dark:text-gray-400 line-through'
+                : 'text-gray-900 dark:text-white'
             }`}
           >
             {task.description}
-          </p>
+          </motion.p>
 
           {/* Meta row */}
-          <div className="flex flex-wrap items-center gap-2 mt-2">
+          <div className="flex flex-wrap items-center gap-1.5 mt-2">
             <PriorityBadge priority={task.priority} />
 
             {task.tags.map((tag) => (
@@ -93,67 +109,75 @@ export function TaskCard({
 
             {task.dueDate && (
               <span
-                className={`text-xs ${
+                className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                   isOverdue
-                    ? 'text-red-600 font-medium'
+                    ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'
                     : isToday
-                    ? 'text-blue-600 font-medium'
-                    : 'text-gray-500'
+                    ? 'bg-sage-50 dark:bg-sage-900/20 text-sage-600 dark:text-sage-400'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
                 }`}
               >
                 {getRelativeDate(task.dueDate)}
-                {task.dueTime && ` at ${formatTime(task.dueTime)}`}
+                {task.dueTime && ` · ${formatTime(task.dueTime)}`}
               </span>
             )}
 
             {task.recurrence !== 'none' && (
-              <span className="text-xs text-gray-500 flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
+              <span className="flex items-center gap-0.5 text-xs text-gray-400 dark:text-gray-500">
+                <Repeat className="w-3 h-3" />
                 {task.recurrence}
               </span>
             )}
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-1">
+        {/* Action buttons — appear on hover */}
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
           <button
             onClick={() => onEdit(task)}
-            className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 transition-colors"
+            className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             aria-label="Edit task"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
+            <Pencil className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={handleDelete}
-            className="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-gray-100 transition-colors"
+            onClick={() => setShowDeleteConfirm(true)}
+            className="p-1.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             aria-label="Delete task"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Delete confirmation dialog */}
-      {showDeleteConfirm && (
-        <div className="absolute inset-0 bg-white rounded-lg border border-red-200 p-4 flex flex-col items-center justify-center gap-3">
-          <p className="text-sm text-gray-700">Delete this task?</p>
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(false)}>
-              Cancel
-            </Button>
-            <Button variant="danger" size="sm" onClick={confirmDelete}>
-              Delete
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
+      {/* Delete confirmation overlay */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="absolute inset-0 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-xl border border-red-200 dark:border-red-900/50 flex flex-col items-center justify-center gap-3 z-10 p-4"
+          >
+            <p className="text-sm font-medium text-gray-900 dark:text-white">Delete this task?</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { onDelete(task.id); setShowDeleteConfirm(false); }}
+                className="px-3 py-1.5 text-xs font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

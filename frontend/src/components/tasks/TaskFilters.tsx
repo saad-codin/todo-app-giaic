@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Input, Select } from '@/components/ui/Input';
-import { Button } from '@/components/ui/Button';
+import { motion } from 'framer-motion';
+import { Search, SortAsc, SortDesc } from 'lucide-react';
 import type { TaskFilters, TaskSort, Task } from '@/types/task';
 
 interface TaskFiltersProps {
@@ -13,24 +13,21 @@ interface TaskFiltersProps {
   onSortChange: (sort: TaskSort) => void;
 }
 
-const statusOptions = [
-  { value: 'all', label: 'All Tasks' },
-  { value: 'incomplete', label: 'Incomplete' },
-  { value: 'completed', label: 'Completed' },
-];
-
-const priorityOptions = [
-  { value: 'all', label: 'All Priorities' },
-  { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'low', label: 'Low' },
-];
+const priorityTabs = [
+  { value: 'all', label: 'All', priority: null },
+  { value: 'incomplete', label: 'Active', priority: null, status: 'incomplete' as const },
+  { value: 'urgent', label: 'Urgent', priority: 'urgent' as const },
+  { value: 'high', label: 'High', priority: 'high' as const },
+  { value: 'medium', label: 'Medium', priority: 'medium' as const },
+  { value: 'low', label: 'Low', priority: 'low' as const },
+  { value: 'completed', label: 'Done', priority: null, status: 'completed' as const },
+] as const;
 
 const sortOptions = [
-  { value: 'createdAt', label: 'Date Created' },
+  { value: 'createdAt', label: 'Created' },
   { value: 'dueDate', label: 'Due Date' },
   { value: 'priority', label: 'Priority' },
-  { value: 'alphabetical', label: 'Alphabetical' },
+  { value: 'alphabetical', label: 'A–Z' },
 ];
 
 export function TaskFilters({
@@ -42,7 +39,7 @@ export function TaskFilters({
 }: TaskFiltersProps) {
   const [searchValue, setSearchValue] = useState(filters.search);
 
-  // Debounce search input
+  // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => {
       if (searchValue !== filters.search) {
@@ -52,128 +49,102 @@ export function TaskFilters({
     return () => clearTimeout(timer);
   }, [searchValue, filters, onFiltersChange]);
 
-  // Extract unique tags from tasks
-  const availableTags = useMemo(() => {
-    const tagSet = new Set<string>();
-    tasks.forEach((task) => task.tags.forEach((tag) => tagSet.add(tag)));
-    return Array.from(tagSet).sort();
-  }, [tasks]);
+  // Determine active tab from current filters
+  const activeTab = useMemo(() => {
+    if (filters.status === 'completed') return 'completed';
+    if (filters.status === 'incomplete' && filters.priority === 'all') return 'incomplete';
+    if (filters.priority !== 'all') return filters.priority;
+    return 'all';
+  }, [filters.status, filters.priority]);
 
-  const tagOptions = [
-    { value: '', label: 'All Tags' },
-    ...availableTags.map((tag) => ({ value: tag, label: tag })),
-  ];
+  const handleTabClick = (tab: typeof priorityTabs[number]) => {
+    if (tab.value === 'all') {
+      onFiltersChange({ ...filters, status: 'all', priority: 'all' });
+    } else if (tab.value === 'incomplete') {
+      onFiltersChange({ ...filters, status: 'incomplete', priority: 'all' });
+    } else if (tab.value === 'completed') {
+      onFiltersChange({ ...filters, status: 'completed', priority: 'all' });
+    } else if (tab.priority) {
+      onFiltersChange({ ...filters, status: 'all', priority: tab.priority });
+    }
+  };
 
-  const hasActiveFilters =
-    filters.search ||
-    filters.status !== 'all' ||
-    filters.priority !== 'all' ||
-    filters.tag;
+  const tabColors: Record<string, string> = {
+    all: 'text-gray-700 dark:text-gray-200',
+    incomplete: 'text-blue-700 dark:text-blue-300',
+    urgent: 'text-purple-700 dark:text-purple-300',
+    high: 'text-red-700 dark:text-red-300',
+    medium: 'text-amber-700 dark:text-amber-300',
+    low: 'text-green-700 dark:text-green-300',
+    completed: 'text-gray-500 dark:text-gray-400',
+  };
 
-  const handleClearFilters = () => {
-    setSearchValue('');
-    onFiltersChange({
-      search: '',
-      status: 'all',
-      priority: 'all',
-      tag: null,
-    });
+  const activeTabBg: Record<string, string> = {
+    all: 'bg-gray-100 dark:bg-gray-700',
+    incomplete: 'bg-blue-100 dark:bg-blue-900/40',
+    urgent: 'bg-purple-100 dark:bg-purple-900/40',
+    high: 'bg-red-100 dark:bg-red-900/40',
+    medium: 'bg-amber-100 dark:bg-amber-900/40',
+    low: 'bg-green-100 dark:bg-green-900/40',
+    completed: 'bg-gray-100 dark:bg-gray-700',
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
-      <div className="flex flex-col gap-4">
-        {/* Search - full width on its own row */}
-        <div className="w-full">
-          <Input
+    <div className="mb-4 space-y-3">
+      {/* Priority tabs */}
+      <div className="flex items-center gap-1 flex-wrap">
+        {priorityTabs.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => handleTabClick(tab)}
+            className={`relative px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              activeTab === tab.value
+                ? `${activeTabBg[tab.value]} ${tabColors[tab.value]}`
+                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+            }`}
+          >
+            {activeTab === tab.value && (
+              <motion.span
+                layoutId="activeTabIndicator"
+                className={`absolute inset-0 rounded-full ${activeTabBg[tab.value]}`}
+                transition={{ duration: 0.2 }}
+              />
+            )}
+            <span className="relative">{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Search + sort row */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+          <input
             type="search"
             placeholder="Search tasks..."
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
-            className="w-full"
+            className="w-full pl-8 pr-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-sage-500/50 transition-colors"
           />
         </div>
 
-        {/* Filters row */}
-        <div className="flex flex-wrap items-center gap-3">
-          <Select
-            options={statusOptions}
-            value={filters.status}
-            onChange={(e) =>
-              onFiltersChange({
-                ...filters,
-                status: e.target.value as TaskFilters['status'],
-              })
-            }
-            className="w-36"
-          />
+        <select
+          value={sort.field}
+          onChange={(e) => onSortChange({ ...sort, field: e.target.value as TaskSort['field'] })}
+          className="px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-sage-500/50 transition-colors"
+        >
+          {sortOptions.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
 
-          <Select
-            options={priorityOptions}
-            value={filters.priority}
-            onChange={(e) =>
-              onFiltersChange({
-                ...filters,
-                priority: e.target.value as TaskFilters['priority'],
-              })
-            }
-            className="w-36"
-          />
-
-          {availableTags.length > 0 && (
-            <Select
-              options={tagOptions}
-              value={filters.tag || ''}
-              onChange={(e) =>
-                onFiltersChange({
-                  ...filters,
-                  tag: e.target.value || null,
-                })
-              }
-              className="w-36"
-            />
-          )}
-
-          {/* Sort */}
-          <Select
-            options={sortOptions}
-            value={sort.field}
-            onChange={(e) =>
-              onSortChange({
-                ...sort,
-                field: e.target.value as TaskSort['field'],
-              })
-            }
-            className="w-36"
-          />
-
-          <button
-            onClick={() =>
-              onSortChange({
-                ...sort,
-                direction: sort.direction === 'asc' ? 'desc' : 'asc',
-              })
-            }
-            className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
-            title={`Sort ${sort.direction === 'asc' ? 'descending' : 'ascending'}`}
-          >
-            {sort.direction === 'asc' ? (
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4" />
-              </svg>
-            )}
-          </button>
-
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={handleClearFilters}>
-              Clear Filters
-            </Button>
-          )}
-        </div>
+        <button
+          onClick={() => onSortChange({ ...sort, direction: sort.direction === 'asc' ? 'desc' : 'asc' })}
+          className="p-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          title={`Sort ${sort.direction === 'asc' ? 'descending' : 'ascending'}`}
+        >
+          {sort.direction === 'asc' ? <SortAsc className="w-4 h-4" /> : <SortDesc className="w-4 h-4" />}
+        </button>
       </div>
     </div>
   );

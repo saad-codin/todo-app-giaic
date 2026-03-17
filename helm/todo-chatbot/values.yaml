@@ -21,8 +21,9 @@ frontend:
   env:
     NEXT_PUBLIC_API_URL: "http://backend-svc:8000"
     NEXT_PUBLIC_CHATKIT_DOMAIN_KEY: ""
+    NEXT_PUBLIC_WS_URL: "ws://sync-svc:8003"
 
-# Backend configuration (FastAPI with Agents SDK)
+# Backend configuration (FastAPI with Agents SDK + Dapr)
 backend:
   replicaCount: 1
   image:
@@ -48,10 +49,72 @@ backend:
     JWT_SECRET: ""
     BETTER_AUTH_SECRET: ""
 
+# Reminder service configuration
+reminder:
+  replicaCount: 1
+  image:
+    repository: reminder-service
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# Recurring service configuration
+recurring:
+  replicaCount: 1
+  image:
+    repository: recurring-service
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# Sync service configuration
+sync:
+  replicaCount: 1
+  image:
+    repository: sync-service
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# Redpanda (Kafka-compatible message broker)
+redpanda:
+  enabled: true  # Set to false for cloud deployment
+  image:
+    repository: docker.redpanda.com/redpandadata/redpanda
+    tag: latest
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  cloud:
+    enabled: false
+    bootstrapServers: ""
+
 # Common configuration
 common:
   namespace: todo-chatbot
   labels:
     app.kubernetes.io/name: todo-chatbot
-    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/version: "2.0.0"
     app.kubernetes.io/managed-by: Helm

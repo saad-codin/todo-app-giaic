@@ -1,4 +1,4 @@
-"""Task CRUD routes."""
+"""Task CRUD routes with event publishing."""
 
 import uuid
 from datetime import datetime, timedelta
@@ -8,8 +8,9 @@ from sqlmodel import Session, select
 from pydantic import BaseModel
 
 from db import get_session
-from models import Task, TaskCreate, TaskUpdate, TaskResponse, Priority, Recurrence
+from models import Task, TaskCreate, TaskUpdate, TaskResponse, TaskEvent, Priority, Recurrence
 from auth import get_current_user, User
+from events import publish_event
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -60,6 +61,40 @@ def calculate_next_due_date(due_date: str, recurrence: Recurrence) -> str:
         return due_date
 
     return next_date.strftime("%Y-%m-%d")
+
+
+def _task_to_sync_dict(task: Task) -> dict:
+    """Convert a Task to a dict suitable for sync events."""
+    return {
+        "id": task.id,
+        "description": task.description,
+        "completed": task.completed,
+        "priority": task.priority.value if isinstance(task.priority, Priority) else task.priority,
+        "tags": task.tags or [],
+        "dueDate": task.due_date,
+        "dueTime": task.due_time,
+        "recurrence": task.recurrence.value if isinstance(task.recurrence, Recurrence) else task.recurrence,
+        "createdAt": task.created_at.isoformat() + "Z",
+        "updatedAt": task.updated_at.isoformat() + "Z",
+    }
+
+
+async def _publish_and_audit(session: Session, topic: str, event_type: str, data: dict, task_id: str, user_id: str):
+    """Publish event and write audit stub record."""
+    event_id = await publish_event(topic, event_type, data)
+    # Audit stub: write TaskEvent record (FR-018)
+    audit_record = TaskEvent(
+        id=event_id,
+        event_type=event_type,
+        task_id=task_id,
+        user_id=user_id,
+        payload=data,
+    )
+    try:
+        session.add(audit_record)
+        session.commit()
+    except Exception:
+        session.rollback()
 
 
 @router.get("", response_model=TaskListResponse)
@@ -191,6 +226,31 @@ async def create_task(
     session.commit()
     session.refresh(task)
 
+    # T022: Publish task.created event to task-events topic
+    now = datetime.utcnow().isoformat() + "Z"
+    created_data = {
+        "task_id": task.id,
+        "user_id": task.user_id,
+        "description": task.description,
+        "priority": task.priority.value,
+        "tags": task.tags or [],
+        "due_date": task.due_date,
+        "due_time": task.due_time,
+        "recurrence": task.recurrence.value,
+        "is_completion_based": request.isCompletionBased or False,
+        "timestamp": now,
+    }
+    await _publish_and_audit(session, "task-events", "task.created", created_data, task.id, task.user_id)
+
+    # Publish task.sync event to task-updates topic
+    sync_data = {
+        "user_id": task.user_id,
+        "action": "created",
+        "task": _task_to_sync_dict(task),
+        "timestamp": now,
+    }
+    await publish_event("task-updates", "task.sync", sync_data)
+
     return SingleTaskResponse(task=TaskResponse.from_task(task))
 
 
@@ -228,6 +288,9 @@ async def update_task(
             detail={"code": "NOT_FOUND", "message": "Task not found"},
         )
 
+    # Track changed fields for event
+    changed_fields = {}
+
     # Update fields if provided
     if request.description is not None:
         if len(request.description.strip()) == 0:
@@ -239,34 +302,76 @@ async def update_task(
                     "details": {"field": "description", "constraint": "required"},
                 },
             )
+        old_desc = task.description
         task.description = request.description.strip()
+        if old_desc != task.description:
+            changed_fields["description"] = {"old": old_desc, "new": task.description}
 
     if request.completed is not None:
+        old_val = task.completed
         task.completed = request.completed
+        if old_val != task.completed:
+            changed_fields["completed"] = {"old": old_val, "new": task.completed}
 
     if request.priority is not None:
+        old_val = task.priority.value if isinstance(task.priority, Priority) else task.priority
         task.priority = request.priority
+        new_val = request.priority.value if isinstance(request.priority, Priority) else request.priority
+        if old_val != new_val:
+            changed_fields["priority"] = {"old": old_val, "new": new_val}
 
     if request.tags is not None:
+        old_val = task.tags
         task.tags = request.tags
+        if old_val != task.tags:
+            changed_fields["tags"] = {"old": old_val, "new": task.tags}
 
     if request.dueDate is not None:
+        old_val = task.due_date
         task.due_date = request.dueDate if request.dueDate else None
+        if old_val != task.due_date:
+            changed_fields["due_date"] = {"old": old_val, "new": task.due_date}
 
     if request.dueTime is not None:
+        old_val = task.due_time
         task.due_time = request.dueTime if request.dueTime else None
+        if old_val != task.due_time:
+            changed_fields["due_time"] = {"old": old_val, "new": task.due_time}
 
     if request.reminderTime is not None:
         task.reminder_time = request.reminderTime if request.reminderTime else None
 
     if request.recurrence is not None:
+        old_val = task.recurrence.value if isinstance(task.recurrence, Recurrence) else task.recurrence
         task.recurrence = request.recurrence
+        new_val = request.recurrence.value if isinstance(request.recurrence, Recurrence) else request.recurrence
+        if old_val != new_val:
+            changed_fields["recurrence"] = {"old": old_val, "new": new_val}
 
     task.updated_at = datetime.utcnow()
 
     session.add(task)
     session.commit()
     session.refresh(task)
+
+    # T023: Publish task.updated event to task-events topic
+    now = datetime.utcnow().isoformat() + "Z"
+    updated_data = {
+        "task_id": task.id,
+        "user_id": task.user_id,
+        "changed_fields": changed_fields,
+        "timestamp": now,
+    }
+    await _publish_and_audit(session, "task-events", "task.updated", updated_data, task.id, task.user_id)
+
+    # Publish task.sync event to task-updates topic
+    sync_data = {
+        "user_id": task.user_id,
+        "action": "updated",
+        "task": _task_to_sync_dict(task),
+        "timestamp": now,
+    }
+    await publish_event("task-updates", "task.sync", sync_data)
 
     return SingleTaskResponse(task=TaskResponse.from_task(task))
 
@@ -286,8 +391,29 @@ async def delete_task(
             detail={"code": "NOT_FOUND", "message": "Task not found"},
         )
 
+    task_id_copy = task.id
+    user_id_copy = task.user_id
+
     session.delete(task)
     session.commit()
+
+    # T026: Publish task.deleted event to task-events topic
+    now = datetime.utcnow().isoformat() + "Z"
+    deleted_data = {
+        "task_id": task_id_copy,
+        "user_id": user_id_copy,
+        "timestamp": now,
+    }
+    await _publish_and_audit(session, "task-events", "task.deleted", deleted_data, task_id_copy, user_id_copy)
+
+    # Publish task.sync event to task-updates topic
+    sync_data = {
+        "user_id": user_id_copy,
+        "action": "deleted",
+        "task": None,
+        "timestamp": now,
+    }
+    await publish_event("task-updates", "task.sync", sync_data)
 
     return SuccessResponse(success=True)
 
@@ -339,6 +465,27 @@ async def complete_task(
     if next_occurrence:
         session.refresh(next_occurrence)
 
+    # T024: Publish task.completed event to task-events topic
+    now = datetime.utcnow().isoformat() + "Z"
+    completed_data = {
+        "task_id": task.id,
+        "user_id": task.user_id,
+        "completed_at": now,
+        "had_recurrence": task.recurrence != Recurrence.none,
+        "is_completion_based": False,
+        "timestamp": now,
+    }
+    await _publish_and_audit(session, "task-events", "task.completed", completed_data, task.id, task.user_id)
+
+    # Publish task.sync event to task-updates topic
+    sync_data = {
+        "user_id": task.user_id,
+        "action": "completed",
+        "task": _task_to_sync_dict(task),
+        "timestamp": now,
+    }
+    await publish_event("task-updates", "task.sync", sync_data)
+
     return CompleteTaskResponse(
         task=TaskResponse.from_task(task),
         nextOccurrence=TaskResponse.from_task(next_occurrence) if next_occurrence else None,
@@ -366,5 +513,24 @@ async def incomplete_task(
     session.add(task)
     session.commit()
     session.refresh(task)
+
+    # T025: Publish task.updated event to task-events topic
+    now = datetime.utcnow().isoformat() + "Z"
+    updated_data = {
+        "task_id": task.id,
+        "user_id": task.user_id,
+        "changed_fields": {"completed": {"old": True, "new": False}},
+        "timestamp": now,
+    }
+    await _publish_and_audit(session, "task-events", "task.updated", updated_data, task.id, task.user_id)
+
+    # Publish task.sync event to task-updates topic
+    sync_data = {
+        "user_id": task.user_id,
+        "action": "updated",
+        "task": _task_to_sync_dict(task),
+        "timestamp": now,
+    }
+    await publish_event("task-updates", "task.sync", sync_data)
 
     return SingleTaskResponse(task=TaskResponse.from_task(task))

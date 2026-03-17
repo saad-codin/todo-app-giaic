@@ -1,6 +1,6 @@
 // Core entity types for Todo App Frontend Dashboard
 
-export type Priority = 'high' | 'medium' | 'low';
+export type Priority = 'urgent' | 'high' | 'medium' | 'low';
 export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 
 export interface User {
@@ -21,6 +21,8 @@ export interface Task {
   dueTime: string | null;      // ISO 8601 time (HH:MM)
   reminderTime: string | null; // ISO 8601 datetime
   recurrence: Recurrence;
+  isCompletionBased: boolean;
+  nextOccurrence: string | null;
   createdAt: string;           // ISO 8601 datetime
   updatedAt: string;           // ISO 8601 datetime
 }
@@ -41,7 +43,7 @@ export interface AuthState {
 export interface TaskFilters {
   search: string;
   status: 'all' | 'completed' | 'incomplete';
-  priority: Priority | 'all';
+  priority: 'urgent' | 'high' | 'medium' | 'low' | 'all';
   tag: string | null;
 }
 

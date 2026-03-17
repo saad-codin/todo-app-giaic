@@ -18,7 +18,26 @@ backend:
 frontend:
   env:
     # ChatKit domain key (from OpenAI platform)
-    NEXT_PUBLIC_CHATKIT_DOMAIN_KEY: "domain_pk_6966c1e2998c8194a1d76763191cf6f805b23bc4ca10d1e4"
+    NEXT_PUBLIC_CHATKIT_DOMAIN_KEY: "domain_pk_..."
+    # WebSocket URL for real-time sync (auto-configured for Minikube)
+    NEXT_PUBLIC_WS_URL: "ws://sync-svc:8003"
+
+# Redpanda - local mode (in-cluster single-node broker)
+redpanda:
+  enabled: true
+  cloud:
+    enabled: false
+
+# Service image tags - use 'latest' for local builds
+reminder:
+  image:
+    tag: latest
+recurring:
+  image:
+    tag: latest
+sync:
+  image:
+    tag: latest
 
 # Example: Override replica counts for testing
 # backend:
@@ -29,7 +48,7 @@ frontend:
 # Example: Use custom image tags
 # backend:
 #   image:
-#     tag: "v1.0.1"
+#     tag: "v2.0.1"
 # frontend:
 #   image:
-#     tag: "v1.0.1"
+#     tag: "v2.0.1"

@@ -3,7 +3,7 @@ import { z } from 'zod';
 // Task validation schema
 export const taskSchema = z.object({
   description: z.string().min(1, 'Description is required').max(500, 'Description too long'),
-  priority: z.enum(['high', 'medium', 'low']).default('medium'),
+  priority: z.enum(['urgent', 'high', 'medium', 'low']).default('medium'),
   tags: z.array(z.string().min(1).max(50)).max(10).default([]),
   dueDate: z.string().nullable().optional(),
   dueTime: z.string().nullable().optional(),
@@ -41,7 +41,7 @@ export type UpdateTaskFormData = z.infer<typeof updateTaskSchema>;
 export const taskFiltersSchema = z.object({
   search: z.string().default(''),
   status: z.enum(['all', 'completed', 'incomplete']).default('all'),
-  priority: z.enum(['high', 'medium', 'low', 'all']).default('all'),
+  priority: z.enum(['urgent', 'high', 'medium', 'low', 'all']).default('all'),
   tag: z.string().nullable().default(null),
 });
 

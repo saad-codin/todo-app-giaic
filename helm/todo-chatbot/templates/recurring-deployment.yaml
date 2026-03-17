@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recurring
+  namespace: {{ .Values.common.namespace }}
+  labels:
+    {{- include "todo-chatbot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: recurring
+spec:
+  replicas: {{ .Values.recurring.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "todo-chatbot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: recurring
+  template:
+    metadata:
+      labels:
+        {{- include "todo-chatbot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: recurring
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "recurring-service"
+        dapr.io/app-port: "8002"
+        dapr.io/app-protocol: "http"
+        dapr.io/enable-api-logging: "true"
+        dapr.io/log-level: "info"
+        dapr.io/sidecar-cpu-request: "50m"
+        dapr.io/sidecar-memory-request: "64Mi"
+        dapr.io/sidecar-cpu-limit: "100m"
+        dapr.io/sidecar-memory-limit: "128Mi"
+    spec:
+      containers:
+        - name: recurring
+          image: "{{ .Values.recurring.image.repository }}:{{ .Values.recurring.image.tag }}"
+          imagePullPolicy: {{ .Values.recurring.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8002
+              protocol: TCP
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: todo-secrets
+                  key: DATABASE_URL
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.recurring.resources | nindent 12 }}

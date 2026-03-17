@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+dapr>=1.14.0
+sqlmodel
+psycopg2-binary
+asyncpg
+requests
+python-dotenv

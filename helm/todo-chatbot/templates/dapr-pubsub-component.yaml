@@ -1,0 +1,46 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: taskpubsub
+  namespace: {{ .Values.common.namespace }}
+spec:
+  type: pubsub.kafka
+  version: v1
+  initTimeout: 60s
+  ignoreErrors: true
+  metadata:
+    {{- if .Values.redpanda.cloud.enabled }}
+    - name: brokers
+      value: "{{ .Values.redpanda.cloud.bootstrapServers }}"
+    - name: consumerGroup
+      value: "todo-consumers"
+    - name: authType
+      value: "sasl"
+    - name: saslUsername
+      secretKeyRef:
+        name: redpanda-secrets
+        key: username
+    - name: saslPassword
+      secretKeyRef:
+        name: redpanda-secrets
+        key: password
+    - name: saslMechanism
+      value: "SCRAM-SHA-256"
+    - name: initialOffset
+      value: "oldest"
+    - name: requiredAcks
+      value: "all"
+    - name: clientID
+      value: "todo-chatbot"
+    {{- else }}
+    - name: brokers
+      value: "redpanda.{{ .Values.common.namespace }}.svc.cluster.local:9092"
+    - name: consumerGroup
+      value: "todo-consumers"
+    - name: authType
+      value: "none"
+    - name: initialOffset
+      value: "oldest"
+    - name: disableTls
+      value: "true"
+    {{- end }}

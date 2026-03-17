@@ -68,12 +68,37 @@ Specifications in `/specs`:
 
 ```bash
 # Kubernetes Commands
-./scripts/minikube-setup.sh                    # Start Minikube
-./scripts/build-images.sh --minikube           # Build images
+./scripts/minikube-setup.sh                    # Start Minikube + Dapr
+./scripts/build-images.sh --minikube           # Build all 5 images
 ./scripts/deploy.sh                            # Deploy with Helm
 minikube service frontend-svc -n todo-chatbot  # Access app
 kubectl get pods -n todo-chatbot               # Check pods
 helm list -n todo-chatbot                      # Check release
+```
+
+### Event-Driven Architecture (Phase V)
+- **Dapr Building Blocks**: Pub/Sub (`pubsub.kafka`), State Store (`state.postgresql`)
+- **Message Broker**: Redpanda (Kafka-compatible) — local in-cluster or Redpanda Cloud Serverless
+- **Event Publisher**: `backend/events/publisher.py` — fire-and-forget via Dapr sidecar
+- **Event Schemas**: `backend/events/schemas.py` — CloudEvents v1.0 envelope
+- **Kafka Topics**: `task-events`, `task-updates`, `reminders`
+- **Microservices**:
+  - `services/reminder/` — Schedules/fires reminders (port 8001)
+  - `services/recurring/` — Manages recurring task instances (port 8002)
+  - `services/sync/` — WebSocket real-time sync (port 8003)
+- **Dapr Components (local)**: `dapr/pubsub.yaml`, `dapr/statestore.yaml`, `dapr/subscriptions.yaml`
+- **Helm Templates**: `helm/todo-chatbot/templates/` (Redpanda, Dapr components, service deployments)
+- **Cloud Config**: `helm/todo-chatbot/values-cloud.yaml`, `scripts/setup-redpanda-cloud.sh`
+- **CI/CD**: `.github/workflows/deploy.yml` — Build 5 images, push ACR, deploy AKS
+- **Quickstart**: `specs/006-dapr-event-driven/quickstart.md`
+
+```bash
+# Event-driven specific commands
+./scripts/setup-redpanda-cloud.sh              # Configure Redpanda Cloud credentials
+./scripts/deploy-azure.sh aks                  # Create AKS + ACR + deploy
+./scripts/verify-deployment.sh                 # Health check all services
+kubectl get components.dapr.io -n todo-chatbot # Check Dapr components
+kubectl get subscriptions.dapr.io -n todo-chatbot # Check subscriptions
 ```
 
 ## Development Workflow
@@ -84,6 +109,7 @@ helm list -n todo-chatbot                      # Check release
 4. Test and iterate
 
 ## Active Technologies
+- Dapr 1.14, Redpanda (Kafka), WebSocket, AKS, ACR, GitHub Actions CI/CD (006-dapr-event-driven)
 - Docker, Minikube, Helm 3, kubectl (005-local-k8s-deployment)
 - Python FastAPI, OpenAI Agents SDK, MCP SDK, Neon PostgreSQL (004-ai-todo-chatbot)
 - OpenAI ChatKit frontend, Better Auth with JWT (004-ai-todo-chatbot)
@@ -97,6 +123,7 @@ helm list -n todo-chatbot                      # Check release
 - Neon PostgreSQL (existing from Phase II, extended with conversation tables) (004-ai-todo-chatbot)
 
 ## Recent Changes
+- 006-dapr-event-driven: Event-driven architecture with Dapr pub/sub, Redpanda, 3 microservices (reminder, recurring, sync), WebSocket real-time sync, AKS cloud deployment
 - 005-local-k8s-deployment: Containerized frontend/backend with Helm charts for Minikube deployment
 - 004-ai-todo-chatbot: AI-powered conversational todo management with MCP tools and stateless backend
 - 003-todo-frontend-dashboard: Added Next.js 14+ frontend with Better Auth, React Query, Tailwind CSS

@@ -18,6 +18,7 @@ const priorityOptions = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
+  { value: 'urgent', label: 'Urgent' },
 ];
 
 const recurrenceOptions = [
@@ -51,10 +52,11 @@ export function TaskForm({ task, onSubmit, onCancel, isSubmitting }: TaskFormPro
         label="Description"
         placeholder="What needs to be done?"
         error={errors.description?.message}
+        autoFocus
         {...register('description')}
       />
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         <Controller
           name="priority"
           control={control}
@@ -82,7 +84,7 @@ export function TaskForm({ task, onSubmit, onCancel, isSubmitting }: TaskFormPro
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         <Input
           type="date"
           label="Due Date"
@@ -92,15 +94,15 @@ export function TaskForm({ task, onSubmit, onCancel, isSubmitting }: TaskFormPro
 
         <Input
           type="time"
-          label="Due Time (optional)"
+          label="Due Time"
           error={errors.dueTime?.message}
           {...register('dueTime')}
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Tags (comma separated)
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+          Tags <span className="text-gray-400 font-normal text-xs">(comma separated)</span>
         </label>
         <Controller
           name="tags"
@@ -121,11 +123,11 @@ export function TaskForm({ task, onSubmit, onCancel, isSubmitting }: TaskFormPro
         />
       </div>
 
-      <div className="flex justify-end gap-3 pt-4 border-t">
-        <Button type="button" variant="ghost" onClick={onCancel}>
+      <div className="flex justify-end gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" isLoading={isSubmitting}>
+        <Button type="submit" size="sm" isLoading={isSubmitting}>
           {task ? 'Update Task' : 'Create Task'}
         </Button>
       </div>

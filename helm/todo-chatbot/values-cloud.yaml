@@ -1,0 +1,109 @@
+# Cloud values for Todo Chatbot deployment (AKS + Redpanda Cloud)
+# Usage: helm upgrade --install todo-chatbot ./helm/todo-chatbot -f values-cloud.yaml -n todo-chatbot
+
+# Frontend configuration
+frontend:
+  replicaCount: 1
+  image:
+    repository: todoappcr2025.azurecr.io/todo-frontend
+    tag: latest
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 3000
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  env:
+    NEXT_PUBLIC_API_URL: "http://backend-svc:8000"
+    NEXT_PUBLIC_CHATKIT_DOMAIN_KEY: ""
+    NEXT_PUBLIC_WS_URL: "ws://sync-svc:8003"
+
+# Backend configuration
+backend:
+  replicaCount: 1
+  image:
+    repository: todoappcr2025.azurecr.io/todo-backend
+    tag: latest
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  env:
+    FRONTEND_URL: "http://frontend-svc:3000"
+  secrets:
+    DATABASE_URL: ""
+    OPENAI_API_KEY: ""
+    JWT_SECRET: ""
+    BETTER_AUTH_SECRET: ""
+
+# Reminder service
+reminder:
+  replicaCount: 1
+  image:
+    repository: todoappcr2025.azurecr.io/reminder-service
+    tag: latest
+    pullPolicy: Always
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# Recurring service
+recurring:
+  replicaCount: 1
+  image:
+    repository: todoappcr2025.azurecr.io/recurring-service
+    tag: latest
+    pullPolicy: Always
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# Sync service
+sync:
+  replicaCount: 1
+  image:
+    repository: todoappcr2025.azurecr.io/sync-service
+    tag: latest
+    pullPolicy: Always
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# Redpanda - cloud mode (Redpanda Cloud Serverless)
+redpanda:
+  enabled: false  # No in-cluster Redpanda
+  cloud:
+    enabled: true
+    bootstrapServers: ""  # Set via --set or secrets
+
+# Common configuration
+common:
+  namespace: todo-chatbot
+  labels:
+    app.kubernetes.io/name: todo-chatbot
+    app.kubernetes.io/version: "2.0.0"
+    app.kubernetes.io/managed-by: Helm

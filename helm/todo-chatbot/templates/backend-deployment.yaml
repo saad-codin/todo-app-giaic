@@ -14,6 +14,17 @@ spec:
     metadata:
       labels:
         {{- include "todo-chatbot.backend.selectorLabels" . | nindent 8 }}
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "backend"
+        dapr.io/app-port: "8000"
+        dapr.io/app-protocol: "http"
+        dapr.io/enable-api-logging: "true"
+        dapr.io/log-level: "info"
+        dapr.io/sidecar-cpu-request: "50m"
+        dapr.io/sidecar-memory-request: "64Mi"
+        dapr.io/sidecar-cpu-limit: "100m"
+        dapr.io/sidecar-memory-limit: "128Mi"
     spec:
       containers:
         - name: backend

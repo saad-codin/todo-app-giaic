@@ -3,19 +3,20 @@
 import { HTMLAttributes, forwardRef } from 'react';
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
-  variant?: 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'priority-high' | 'priority-medium' | 'priority-low';
+  variant?: 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'priority-urgent' | 'priority-high' | 'priority-medium' | 'priority-low';
   size?: 'sm' | 'md';
 }
 
 const variantClasses = {
-  default: 'bg-gray-100 text-gray-800',
-  primary: 'bg-blue-100 text-blue-800',
-  success: 'bg-green-100 text-green-800',
-  warning: 'bg-amber-100 text-amber-800',
-  danger: 'bg-red-100 text-red-800',
-  'priority-high': 'bg-red-100 text-red-800 border border-red-300',
-  'priority-medium': 'bg-amber-100 text-amber-800 border border-amber-300',
-  'priority-low': 'bg-green-100 text-green-800 border border-green-300',
+  default: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300',
+  primary: 'bg-sage-100 dark:bg-sage-900/30 text-sage-700 dark:text-sage-400',
+  success: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
+  warning: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',
+  danger: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
+  'priority-urgent': 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
+  'priority-high': 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
+  'priority-medium': 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',
+  'priority-low': 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
 };
 
 const sizeClasses = {
@@ -41,15 +42,15 @@ export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(
 
 Badge.displayName = 'Badge';
 
-// Priority badge helper component
 export interface PriorityBadgeProps {
-  priority: 'high' | 'medium' | 'low';
+  priority: 'urgent' | 'high' | 'medium' | 'low';
   size?: 'sm' | 'md';
   className?: string;
 }
 
 export function PriorityBadge({ priority, size = 'sm', className = '' }: PriorityBadgeProps) {
   const labels = {
+    urgent: 'Urgent',
     high: 'High',
     medium: 'Medium',
     low: 'Low',
@@ -62,7 +63,6 @@ export function PriorityBadge({ priority, size = 'sm', className = '' }: Priorit
   );
 }
 
-// Tag badge component
 export interface TagBadgeProps {
   tag: string;
   onClick?: () => void;
@@ -76,7 +76,7 @@ export function TagBadge({ tag, onClick, onRemove, size = 'sm', className = '' }
     <Badge
       variant="default"
       size={size}
-      className={`${onClick ? 'cursor-pointer hover:bg-gray-200' : ''} ${className}`}
+      className={`${onClick ? 'cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600' : ''} ${className}`}
       onClick={onClick}
     >
       {tag}
@@ -87,7 +87,7 @@ export function TagBadge({ tag, onClick, onRemove, size = 'sm', className = '' }
             e.stopPropagation();
             onRemove();
           }}
-          className="ml-1 -mr-1 h-4 w-4 rounded-full hover:bg-gray-300 inline-flex items-center justify-center"
+          className="ml-1 -mr-1 h-4 w-4 rounded-full hover:bg-gray-300 dark:hover:bg-gray-500 inline-flex items-center justify-center transition-colors"
           aria-label={`Remove ${tag}`}
         >
           <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

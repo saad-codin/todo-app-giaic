@@ -37,6 +37,21 @@ if ! minikube status | grep -q "Running"; then
     exit 1
 fi
 
+# Verify Dapr is installed on the cluster
+echo ""
+echo -e "${YELLOW}Verifying Dapr installation...${NC}"
+if kubectl get namespace dapr-system &> /dev/null; then
+    echo -e "${GREEN}Dapr is installed on the cluster${NC}"
+else
+    echo -e "${RED}Error: Dapr is not installed on the cluster${NC}"
+    echo "Run: dapr init -k --runtime-version 1.14.4 --wait"
+    echo "Or re-run: ./scripts/minikube-setup.sh"
+    exit 1
+fi
+
+# Create namespace if it doesn't exist
+kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
 # Check for values-local.yaml
 VALUES_ARGS=()
 if [ -f "$CHART_PATH/values-local.yaml" ]; then
@@ -50,7 +65,7 @@ fi
 # Lint the chart first
 echo ""
 echo -e "${YELLOW}Linting Helm chart...${NC}"
-helm lint "$CHART_PATH"
+helm lint "$CHART_PATH" "${VALUES_ARGS[@]}"
 
 # Check if this is an upgrade or fresh install
 if [[ "$1" == "--upgrade" ]] || helm list -n "$NAMESPACE" | grep -q "$RELEASE_NAME"; then
@@ -64,16 +79,21 @@ if [[ "$1" == "--upgrade" ]] || helm list -n "$NAMESPACE" | grep -q "$RELEASE_NA
 else
     echo ""
     echo -e "${YELLOW}Installing new release...${NC}"
-
-    # Create namespace if it doesn't exist
-    kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-
     helm install "$RELEASE_NAME" "$CHART_PATH" \
         --namespace "$NAMESPACE" \
         "${VALUES_ARGS[@]}" \
         --wait \
         --timeout 5m
 fi
+
+# Verify Dapr components are loaded
+echo ""
+echo -e "${YELLOW}Verifying Dapr components...${NC}"
+echo "Components:"
+kubectl get components.dapr.io -n "$NAMESPACE" 2>/dev/null || echo "  (no components found - may be normal if Dapr CRDs are pending)"
+echo ""
+echo "Subscriptions:"
+kubectl get subscriptions.dapr.io -n "$NAMESPACE" 2>/dev/null || echo "  (no subscriptions found - may be normal if Dapr CRDs are pending)"
 
 # Show deployment status
 echo ""
@@ -97,3 +117,7 @@ echo ""
 echo "Or use port forwarding:"
 echo "  kubectl port-forward svc/frontend-svc 3000:3000 -n $NAMESPACE"
 echo "  kubectl port-forward svc/backend-svc 8000:8000 -n $NAMESPACE"
+echo "  kubectl port-forward svc/sync-svc 8003:8003 -n $NAMESPACE"
+echo ""
+echo "To check Dapr sidecar status:"
+echo "  kubectl get pods -n $NAMESPACE -o jsonpath='{range .items[*]}{.metadata.name}{\"\\t\"}{.spec.containers[*].name}{\"\\n\"}{end}'"

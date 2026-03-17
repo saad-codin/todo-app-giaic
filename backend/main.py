@@ -3,8 +3,9 @@
 import os
 import sys
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
 from agents import Agent
@@ -58,20 +59,29 @@ async def lifespan(app: FastAPI):
             "env": {**os.environ},
         },
         cache_tools_list=True,
+        client_session_timeout_seconds=30,
     )
 
-    server = await mcp_server.__aenter__()
-    app.state.mcp_server = mcp_server
-    app.state.todo_agent = Agent(
-        name="TodoAssistant",
-        instructions=AGENT_INSTRUCTIONS,
-        model="gpt-4o-mini",
-        mcp_servers=[server],
-    )
+    # Graceful degradation: if MCP fails, app still serves task CRUD and auth
+    try:
+        server = await mcp_server.__aenter__()
+        app.state.mcp_server = mcp_server
+        app.state.todo_agent = Agent(
+            name="TodoAssistant",
+            instructions=AGENT_INSTRUCTIONS,
+            model="gpt-4o-mini",
+            mcp_servers=[server],
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("MCP server failed to start: %s. Chat features disabled.", e)
+        app.state.mcp_server = None
+        app.state.todo_agent = None
 
     yield
 
-    await mcp_server.__aexit__(None, None, None)
+    if app.state.mcp_server is not None:
+        await mcp_server.__aexit__(None, None, None)
 
 
 app = FastAPI(
@@ -89,6 +99,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://todo-app-giaic.vercel.app",
+        "https://todo-frontend.orangesky-92f0ac2f.eastus.azurecontainerapps.io",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -99,6 +110,30 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(tasks_router)
 app.include_router(chat_router)
+
+
+ALLOWED_ORIGINS = [
+    FRONTEND_URL,
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Ensure CORS headers are present even on unhandled 500 errors."""
+    origin = request.headers.get("origin", "")
+    headers = {}
+    if origin in ALLOWED_ORIGINS:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    import logging
+    logging.getLogger(__name__).exception("Unhandled error: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers=headers,
+    )
 
 
 @app.get("/")

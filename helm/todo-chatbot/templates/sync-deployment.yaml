@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sync
+  namespace: {{ .Values.common.namespace }}
+  labels:
+    {{- include "todo-chatbot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sync
+spec:
+  replicas: {{ .Values.sync.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "todo-chatbot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sync
+  template:
+    metadata:
+      labels:
+        {{- include "todo-chatbot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: sync
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "sync-service"
+        dapr.io/app-port: "8003"
+        dapr.io/app-protocol: "http"
+        dapr.io/enable-api-logging: "true"
+        dapr.io/log-level: "info"
+        dapr.io/sidecar-cpu-request: "50m"
+        dapr.io/sidecar-memory-request: "64Mi"
+        dapr.io/sidecar-cpu-limit: "100m"
+        dapr.io/sidecar-memory-limit: "128Mi"
+    spec:
+      containers:
+        - name: sync
+          image: "{{ .Values.sync.image.repository }}:{{ .Values.sync.image.tag }}"
+          imagePullPolicy: {{ .Values.sync.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8003
+              protocol: TCP
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: todo-secrets
+                  key: JWT_SECRET
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8003
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8003
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.sync.resources | nindent 12 }}

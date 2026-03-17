@@ -56,6 +56,8 @@ export function useTasks(filters?: TaskFilters, sort?: TaskSort) {
           dueTime: newTask.dueTime || null,
           reminderTime: newTask.reminderTime || null,
           recurrence: newTask.recurrence || 'none',
+          isCompletionBased: false,
+          nextOccurrence: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };

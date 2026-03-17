@@ -1,0 +1,19 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: taskpubsub
+  namespace: todo-chatbot
+spec:
+  type: pubsub.kafka
+  version: v1
+  metadata:
+    - name: brokers
+      value: "redpanda.todo-chatbot.svc.cluster.local:9092"
+    - name: consumerGroup
+      value: "todo-consumers"
+    - name: authType
+      value: "none"
+    - name: initialOffset
+      value: "oldest"
+    - name: disableTls
+      value: "true"
